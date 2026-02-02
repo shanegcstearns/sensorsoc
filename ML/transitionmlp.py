@@ -14,7 +14,7 @@ from sklearn.metrics import confusion_matrix
 # ============================================================
 SEED = 42
 HISTORY = 10
-EPOCHS = 60
+EPOCHS = 10
 LR = 1e-3
 BATCH_SIZE = 64
 SMOOTH_K = 5
@@ -268,14 +268,17 @@ dummy_input = torch.tensor(X_te[:1], dtype=torch.int16).float()
 # Export the model
 onnx_path = "transition_sleep_model.onnx"
 torch.onnx.export(
-    model,                   # model being exported
-    dummy_input,             # model input (batch size 1)
-    onnx_path,               # where to save
-    export_params=True,      # store the trained weights
-    opset_version=14,        # recommended for NNgen / embedded compatibility
-    input_names=['input'],   # optional: name inputs/outputs
-    output_names=['output'],
-    dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}},
+    model,
+    dummy_input,
+    onnx_path,
+    export_params=True,
+    opset_version=11,          # NNgen-friendly
+    do_constant_folding=True,
+    input_names=["x"],
+    output_names=["logits"],
+    dynamic_axes=None,
+    # IMPORTANT: force legacy exporter so opset_version is respected
+    dynamo=False,
 )
 
 print(f"\nModel exported to ONNX at {onnx_path}")
