@@ -14,7 +14,7 @@ from sklearn.metrics import confusion_matrix
 # ============================================================
 SEED = 42
 HISTORY = 10
-EPOCHS = 10
+EPOCHS = 60
 LR = 1e-3
 BATCH_SIZE = 64
 SMOOTH_K = 5
@@ -32,7 +32,7 @@ need = ["time", "x", "y", "z", "hr", "ss"]
 df = df.dropna(subset=need).copy()
 
 # Sleep state mapping
-label_map = {"W": 0, "N1": 1, "N2": 1, "N3": 2, "R": 2}
+label_map = {"W": 0, "N1": 1, "N2": 1, "N3": 1, "R": 2}
 df = df[df["ss"].isin(label_map)]
 df["label"] = df["ss"].map(label_map).astype(int)
 
