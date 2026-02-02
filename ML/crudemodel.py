@@ -2,24 +2,25 @@
 import random
 import numpy as np
 import pandas as pd
-import onnx
 
 import torch
+import torch.onnx
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
+
 
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import confusion_matrix
 
 # ============================================================
-# TWEAKABLE KNOBS (play with these)
+# TWEAKABLE KNOBS
 # ============================================================
 SEED = 42
 
 HISTORY = 10                 # window length (timesteps)
 BASELINE_ALPHA = 1 / 256     # HR baseline adaptation speed
 
-EPOCHS = 100
+EPOCHS = 10 # BACK TO 100
 LR = 1e-3
 BATCH_SIZE = 64
 
@@ -38,6 +39,12 @@ ACC_CENTER_PER_SUBJECT = True
 # Optional: class weighting to fight imbalance
 USE_CLASS_WEIGHTS = False
 
+# ONNX export
+EXPORT_ONNX = True
+ONNX_PATH = "sleep_model.onnx"
+NORM_PATH = "sleep_model_norm.npz"   # save mean/std for deployment
+             # NNgen examples often use <= 10/11
+
 # ============================================================
 # Reproducibility
 # ============================================================
@@ -50,18 +57,14 @@ torch.manual_seed(SEED)
 # ============================================================
 df = pd.read_csv("sd_out.csv")  # expected columns: time, x, y, z, hr, ss
 
-# Basic cleanup
 need_cols = ["time", "x", "y", "z", "hr", "ss"]
 missing = [c for c in need_cols if c not in df.columns]
 if missing:
     raise RuntimeError(f"CSV missing columns: {missing}. Found: {list(df.columns)}")
 
 df = df.dropna(subset=need_cols).copy()
-df["time"] = pd.to_numeric(df["time"], errors="coerce")
-df["hr"] = pd.to_numeric(df["hr"], errors="coerce")
-df["x"] = pd.to_numeric(df["x"], errors="coerce")
-df["y"] = pd.to_numeric(df["y"], errors="coerce")
-df["z"] = pd.to_numeric(df["z"], errors="coerce")
+for c in ["time", "x", "y", "z", "hr"]:
+    df[c] = pd.to_numeric(df[c], errors="coerce")
 df = df.dropna(subset=["time", "x", "y", "z", "hr"]).copy()
 
 # ============================================================
@@ -82,6 +85,8 @@ switch = np.zeros(len(df), dtype=bool)
 switch[1:] = time_arr[1:] < time_arr[:-1]
 df["subject_id"] = np.cumsum(switch).astype(int)
 
+sid_arr = df["subject_id"].to_numpy(dtype=np.int64)
+
 # ============================================================
 # HR baseline per subject + delta_hr
 # ============================================================
@@ -89,7 +94,6 @@ baseline = np.zeros(len(df), dtype=np.float32)
 b = None
 prev_sid = None
 hr_arr = df["hr"].to_numpy(dtype=np.float32)
-sid_arr = df["subject_id"].to_numpy(dtype=np.int64)
 
 for i, (sid, hr) in enumerate(zip(sid_arr, hr_arr)):
     if (prev_sid is None) or (sid != prev_sid):
@@ -103,7 +107,7 @@ df["baseline"] = baseline
 df["delta_hr"] = (df["hr"] - df["baseline"]) / (df["baseline"] + 1e-8)
 
 # ============================================================
-# Optional accel centering per subject (removes orientation bias)
+# Optional accel centering per subject
 # ============================================================
 if ACC_CENTER_PER_SUBJECT:
     df["x_c"] = df["x"] - df.groupby("subject_id")["x"].transform("mean")
@@ -122,8 +126,7 @@ delta_hr = df["delta_hr"].to_numpy(dtype=np.float32)
 labels = df["label"].to_numpy(dtype=np.int64)
 
 # ============================================================
-# Build history windows (features per timestep)
-# We'll build a (HISTORY, F) window and then flatten to MLP.
+# Build history windows (HISTORY, F) then flatten for MLP.
 # ============================================================
 X = []
 y = []
@@ -133,30 +136,24 @@ for i in range(HISTORY, len(df)):
     if sid_arr[i - HISTORY] != sid_arr[i]:
         continue
 
-    # ---- HR features (per timestep) ----
-    w_hr = delta_hr[i - HISTORY : i]  # (H,)
+    # ---- HR features ----
+    w_hr = delta_hr[i - HISTORY : i]
     hr_slope = np.diff(w_hr, prepend=w_hr[0]).astype(np.float32)
     hr_std = np.std(w_hr).astype(np.float32)
     hr_std_vec = np.full((HISTORY,), hr_std, dtype=np.float32)
+    hr_feats = np.stack([w_hr, hr_slope, hr_std_vec], axis=1) * float(HR_WEIGHT)  # (H, 3)
 
-    # stack => (H, 3)
-    hr_feats = np.stack([w_hr, hr_slope, hr_std_vec], axis=1) * float(HR_WEIGHT)
-
-    # ---- Accel features (per timestep) ----
+    # ---- Accel features ----
     ax = x_arr[i - HISTORY : i]
     ay = y_arr[i - HISTORY : i]
     az = z_arr[i - HISTORY : i]
 
     acc_feat_list = []
-
-    # raw centered axes
-    acc_feat_list.append(np.stack([ax, ay, az], axis=1))
+    acc_feat_list.append(np.stack([ax, ay, az], axis=1))  # (H,3)
 
     if USE_ACC_MAG:
         mag = np.sqrt(ax * ax + ay * ay + az * az).astype(np.float32)
         acc_feat_list.append(mag.reshape(HISTORY, 1))
-
-        # magnitude slope (helps detect movement)
         mag_slope = np.diff(mag, prepend=mag[0]).astype(np.float32)
         acc_feat_list.append(mag_slope.reshape(HISTORY, 1))
 
@@ -165,29 +162,23 @@ for i in range(HISTORY, len(df)):
         day = np.diff(ay, prepend=ay[0]).astype(np.float32)
         daz = np.diff(az, prepend=az[0]).astype(np.float32)
         acc_feat_list.append(np.stack([dax, day, daz], axis=1))
-
         dmag = np.sqrt(dax * dax + day * day + daz * daz).astype(np.float32)
         acc_feat_list.append(dmag.reshape(HISTORY, 1))
 
     if USE_ACC_JERK:
-        # jerk = diff of delta
         dax = np.diff(ax, prepend=ax[0]).astype(np.float32)
         day = np.diff(ay, prepend=ay[0]).astype(np.float32)
         daz = np.diff(az, prepend=az[0]).astype(np.float32)
-
         jx = np.diff(dax, prepend=dax[0]).astype(np.float32)
         jy = np.diff(day, prepend=day[0]).astype(np.float32)
         jz = np.diff(daz, prepend=daz[0]).astype(np.float32)
         acc_feat_list.append(np.stack([jx, jy, jz], axis=1))
-
         jmag = np.sqrt(jx * jx + jy * jy + jz * jz).astype(np.float32)
         acc_feat_list.append(jmag.reshape(HISTORY, 1))
 
     acc_feats = np.concatenate(acc_feat_list, axis=1).astype(np.float32) * float(ACC_WEIGHT)
 
-    # ---- Combine per-timestep features ----
     feats = np.concatenate([hr_feats, acc_feats], axis=1).astype(np.float32)  # (H, F_total)
-
     X.append(feats)
     y.append(int(labels[i]))
 
@@ -219,6 +210,10 @@ X_test  = (X_test  - train_mean) / train_std
 X_train = X_train.reshape(len(X_train), -1).astype(np.float32)
 X_test  = X_test.reshape(len(X_test),  -1).astype(np.float32)
 
+# Save normalization params for hardware / deployment
+np.savez(NORM_PATH, mean=train_mean.astype(np.float32), std=train_std.astype(np.float32))
+print(f"Saved normalization params to {NORM_PATH}")
+
 # ============================================================
 # Torch datasets
 # ============================================================
@@ -236,16 +231,15 @@ train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True)
 class SleepMLP(nn.Module):
     def __init__(self, in_dim, num_classes=3):
         super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(in_dim, 64),
-            nn.ReLU(),
-            nn.Linear(64, 32),
-            nn.ReLU(),
-            nn.Linear(32, num_classes),
-        )
+        self.fc1 = nn.Linear(in_dim, 64)
+        self.fc2 = nn.Linear(64, 32)
+        self.fc3 = nn.Linear(32, num_classes)
 
     def forward(self, x):
-        return self.net(x)
+        x = torch.relu(self.fc1(x))
+        x = torch.relu(self.fc2(x))
+        x = self.fc3(x)
+        return x
 
 model = SleepMLP(in_dim=X_train_t.shape[1], num_classes=3)
 optimizer = torch.optim.Adam(model.parameters(), lr=LR)
@@ -257,15 +251,12 @@ if USE_CLASS_WEIGHTS:
     for u, c in zip(unique, counts):
         freq[int(u)] = float(c)
     w = (freq.sum() / (freq + 1e-8)).astype(np.float32)
-    w = w / w.sum() * 3.0  # normalize-ish
+    w = w / w.sum() * 3.0
     class_w = torch.tensor(w, dtype=torch.float32)
     criterion = nn.CrossEntropyLoss(weight=class_w)
 else:
     criterion = nn.CrossEntropyLoss()
 
-# ============================================================
-# Helpers / baselines
-# ============================================================
 def baseline_acc(always_class: int) -> float:
     preds = np.full_like(y_test, fill_value=always_class)
     return float((preds == y_test).mean())
@@ -275,10 +266,7 @@ print("y_test  counts:", dict(zip(*np.unique(y_test, return_counts=True))))
 print(f"Baseline always W(0): {baseline_acc(0)*100:.2f}%")
 print(f"Baseline always N(1): {baseline_acc(1)*100:.2f}%")
 print(f"Baseline always (N3/R)(2): {baseline_acc(2)*100:.2f}%")
-print(f"Feature dims per timestep: {X.shape[-1]}  | flattened: {X_train.shape[1]}")
-print(f"HR_WEIGHT={HR_WEIGHT}  ACC_WEIGHT={ACC_WEIGHT}  ACC_CENTER_PER_SUBJECT={ACC_CENTER_PER_SUBJECT}")
-print(f"USE_ACC_MAG={USE_ACC_MAG}  USE_ACC_DXYZ={USE_ACC_DXYZ}  USE_ACC_JERK={USE_ACC_JERK}")
-print(f"USE_CLASS_WEIGHTS={USE_CLASS_WEIGHTS}")
+print(f"Input dim (flattened): {X_train_t.shape[1]}")
 
 # ============================================================
 # Training
@@ -318,11 +306,43 @@ print(cm)
 
 inv_label_map = {0: "W", 1: "N1/N2", 2: "N3/R"}
 print("\nSample predictions:")
-for i in range(min(100, len(y_test))):
+for i in range(min(50, len(y_test))):
     true_label = inv_label_map[int(y_test[i])]
     pred_label = inv_label_map[int(preds[i])]
     status = "✓" if preds[i] == y_test[i] else "✗"
     print(f"{i}: true={true_label}, pred={pred_label} {status}")
 
-to_nngen = onnx.export(model, X_test_t, "sleep_model.onnx", export_params=True, opset_version=10)
-to_nngen.save("sleep_model.onnx")
+# ============================================================
+# Export ONNX (the correct way)
+# ============================================================
+# ============================================================
+# Export ONNX (NNgen-friendly)
+# ============================================================
+if EXPORT_ONNX:
+    model.eval()
+
+    dummy = torch.zeros((1, X_train_t.shape[1]), dtype=torch.float32)
+
+    torch.onnx.export(
+        model,
+        dummy,
+        ONNX_PATH,
+        export_params=True,
+        opset_version=11,          # NNgen-friendly
+        do_constant_folding=True,
+        input_names=["x"],
+        output_names=["logits"],
+        dynamic_axes=None,
+        # IMPORTANT: force legacy exporter so opset_version is respected
+        dynamo=False,
+    )
+
+    print(f"\nExported ONNX to {ONNX_PATH}")
+
+    # sanity check right after export
+    import onnx
+    m = onnx.load(ONNX_PATH)
+    print("ONNX opset:", m.opset_import[0].version)
+    print("ONNX ir_version:", m.ir_version)
+    print(f"ONNX input shape should be: (1, {X_train_t.shape[1]})")
+
