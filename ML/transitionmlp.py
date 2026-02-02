@@ -97,6 +97,8 @@ y_trans = []
 y_state = []
 
 labels = df["label"].to_numpy()
+prev_labels = np.zeros_like(labels, dtype=np.int16)
+prev_labels[1:] = labels[:-1]   # first element has no previous, default 0
 sid = df["subject_id"].to_numpy()
 
 x = df["x_c"].to_numpy(np.float32)
@@ -144,7 +146,11 @@ for i in range(HISTORY, len(df)):
         mag_slope.astype(np.int16)
     ], axis=1)
 
-    feats = np.concatenate([hr_feats, acc_feats], axis=1)
+    # Previous predicted state feature
+    prev_pred_state_feat = np.full((HISTORY, 1), prev_labels[i-1], dtype=np.int16)
+
+    # Combine features
+    feats = np.concatenate([hr_feats, acc_feats, prev_pred_state_feat], axis=1)
     X.append(feats)
 
 X = np.array(X)
@@ -240,14 +246,29 @@ def smooth_states(states, k):
 # Evaluate
 # ============================================================
 model.eval()
-with torch.no_grad():
-    logits = model(torch.tensor(X_te, dtype=torch.int16).float())
-    tpred = torch.argmax(logits, dim=1).numpy()
+pred_states = [yte_s[0]]
+pred_trans = []
 
-state_pred = decode_transitions(tpred, yte_s[0])
-state_pred_s = smooth_states(state_pred, SMOOTH_K)
+for t in range(len(X_te)):
+    x_step = X_te[t:t+1].copy()
+    x_step[0, -HISTORY:] = pred_states[-1]  # adjust -HISTORY if you only appended one column
 
-acc_raw = (state_pred == yte_s).mean()
+    logits = model(torch.tensor(x_step, dtype=torch.int16).float())
+    t_step = torch.argmax(logits, dim=1).item()
+    pred_trans.append(t_step)
+
+    s = pred_states[-1]
+    if t_step == 1:
+        s = max(0, s - 1)
+    elif t_step == 2:
+        s = min(2, s + 1)
+    pred_states.append(s)
+
+pred_states = np.array(pred_states[1:])
+state_pred_s = smooth_states(pred_states, SMOOTH_K)
+
+
+acc_raw = (pred_states == yte_s).mean()
 acc_s   = (state_pred_s == yte_s).mean()
 
 print("\nState accuracy:")
