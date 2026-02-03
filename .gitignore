@@ -1,0 +1,6 @@
+venv/
+**/venv/
+*.onnx
+*.onnx.data
+*.npz
+globalfoundries-pdk-libs-gf180mcu_fd_sc_mcu7t5v0/
