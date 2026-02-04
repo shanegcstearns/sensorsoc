@@ -3,7 +3,8 @@ import torch
 from sklearn.datasets import make_moons
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-from torch.utils.data import TensorDataset, DataLoader
+from sklearn.metrics import confusion_matrix, classification_report
+from torch.utils.data import TensorDataset, DataLoader, WeightedRandomSampler
 import torch.nn as nn
 
 import pandas as pd
@@ -31,9 +32,9 @@ STEP_SEC = 300   # every 5 minutes
 WINDOW_SAMPLES = WINDOW_SEC 
 STEP_SAMPLES = STEP_SEC
 
-SEED = 16
+SEED = 16 #42 org
 EPOCHS = 50
-LR = 1e-3
+LR = 1e-4
 
 df = pd.read_csv("sd_out_clean.csv")
 
@@ -170,6 +171,16 @@ y_train = train_df["label"].to_numpy()
 X_test = test_df[features].to_numpy()
 y_test = test_df["label"].to_numpy()
 
+class_sample_counts = np.bincount(y_train)
+weights = 1.0 / class_sample_counts
+sample_weights = weights[y_train]
+
+sampler = WeightedRandomSampler(
+    weights=sample_weights,
+    num_samples=len(sample_weights),
+    replacement=True
+)
+
 train_ds = TensorDataset(
     torch.tensor(X_train, dtype=torch.float32),
     torch.tensor(y_train, dtype=torch.long)
@@ -178,7 +189,8 @@ train_ds = TensorDataset(
 train_loader = DataLoader(
     train_ds,
     batch_size=WINDOW_SEC,
-    shuffle=False
+    #shuffle=True,
+    sampler=sampler
 )
 
 test_ds = TensorDataset(
@@ -195,14 +207,23 @@ test_loader = DataLoader(
 # ============================================================
 # Model
 # ============================================================
+# Compute class counts
+classes, counts = np.unique(y_train, return_counts=True)
+# Inverse frequency weighting
+weights = counts.sum() / (len(classes) * counts)
+class_weights = torch.tensor(weights, dtype=torch.float32)
+print("Class weights:", class_weights)
+
 class TransitionMLP(nn.Module):
     def __init__(self, in_dim):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(in_dim, 64),
             nn.ReLU(),
+            nn.BatchNorm1d(64),
             nn.Linear(64, 32),
             nn.ReLU(),
+            nn.Dropout(0.1),
             nn.Linear(32, 2),  # raw logits
         )
 
@@ -211,11 +232,14 @@ class TransitionMLP(nn.Module):
 
 model = TransitionMLP(X_train.shape[1])
 opt = torch.optim.Adam(model.parameters(), lr=LR)
-loss_fn = nn.CrossEntropyLoss()
+pos_weight = 5.0  # tweak between 3-10
+loss_fn = nn.CrossEntropyLoss(weight=torch.tensor([1.0, pos_weight]))
+#loss_fn = nn.CrossEntropyLoss(weight=class_weights)
 
 # ============================================================
 # Train
 # ============================================================
+
 train_losses = []
 for epoch in range(EPOCHS):
     epoch_loss = 0.0
@@ -239,6 +263,7 @@ for epoch in range(EPOCHS):
     
     print(f"Epoch {epoch+1}/{EPOCHS}, Loss: {avg_loss:.4f}")
 
+model.eval()
 with torch.no_grad():
     X_test_tensor = torch.tensor(X_test, dtype=torch.float32)
     test_output = model(X_test_tensor)
@@ -248,3 +273,5 @@ with torch.no_grad():
     accuracy = (test_pred == y_test_tensor).float().mean()
 
 print(f"Test Accuracy: {accuracy.item() * 100:.2f}%")
+print(confusion_matrix(y_test, test_pred, labels=[0,1]))
+print(classification_report(y_test, test_pred, labels=[0,1]))
