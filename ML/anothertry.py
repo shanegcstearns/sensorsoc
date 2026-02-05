@@ -33,7 +33,7 @@ WINDOW_SAMPLES = WINDOW_SEC
 STEP_SAMPLES = STEP_SEC
 
 SEED = 16 #42 org
-EPOCHS = 50
+EPOCHS = 100
 LR = 1e-4
 
 df = pd.read_csv("sd_out_clean.csv")
@@ -50,15 +50,6 @@ time_arr = df["time"].to_numpy()
 switch = np.zeros(len(df), dtype=bool)
 switch[1:] = time_arr[1:] < time_arr[:-1]
 df["subject_id"] = np.cumsum(switch)
-
-
-import numpy as np
-import pandas as pd
-
-def compute_resting_hr_per_subject(df):
-    
-
-    return resting_hr
 
 # ============================================================
 # HR baseline + delta
@@ -142,7 +133,7 @@ features = [
     "accel_jerk",
     "delta_hr",
     "hr_rmssd",
-    "temp",
+    #"temp",
     "hrv_mov"
 ]
 
@@ -232,7 +223,7 @@ class TransitionMLP(nn.Module):
 
 model = TransitionMLP(X_train.shape[1])
 opt = torch.optim.Adam(model.parameters(), lr=LR)
-pos_weight = 5.0  # tweak between 3-10
+pos_weight = 10.0  # tweak between 3-10
 loss_fn = nn.CrossEntropyLoss(weight=torch.tensor([1.0, pos_weight]))
 #loss_fn = nn.CrossEntropyLoss(weight=class_weights)
 
