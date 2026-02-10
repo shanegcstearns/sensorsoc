@@ -34,7 +34,7 @@ WINDOW_SAMPLES = WINDOW_SEC
 STEP_SAMPLES = STEP_SEC                
 
 SEED = 16                              # Random seed
-EPOCHS = 100                            # How many times the data is passed through the model
+EPOCHS = 50                            # How many times the data is passed through the model
 LR = 1e-3                              # Learning rate, or how much the model updates weights each time
 
 
@@ -197,10 +197,8 @@ class TransitionMLP(nn.Module):
         self.net = nn.Sequential(
             nn.Linear(in_dim, 64),
             nn.ReLU(),
-            nn.BatchNorm1d(64),
             nn.Linear(64, 32),
             nn.ReLU(),
-            nn.Dropout(0.1),
             nn.Linear(32, 2),
         )
 
@@ -253,3 +251,38 @@ print(f"Test Accuracy: {accuracy.item() * 100:.2f}%")
 
 print(confusion_matrix(y_test, test_pred, labels=[0,1]))
 print(classification_report(y_test, test_pred, labels=[0,1]))
+
+class ExportWrapper(nn.Module):
+    def __init__(self, base):
+        super().__init__()
+        self.base = base
+
+    def forward(self, x):
+        # Force a real Flatten op into ONNX by going 4D -> Flatten -> 2D
+        x = x.unsqueeze(-1).unsqueeze(-1)     # (N, C) -> (N, C, 1, 1)
+        x = torch.flatten(x, 1)               # emits ONNX Flatten
+        return self.base(x)
+ # ============================================================
+# Export model to ONNX (NNgen)
+# ============================================================
+
+model.eval()
+export_model = ExportWrapper(model).eval()
+
+dummy_input = torch.tensor(X_train[:1], dtype=torch.float32)  # shape (1, in_dim)
+
+onnx_path = "taketwo_nngen.onnx"
+torch.onnx.export(
+    export_model,
+    dummy_input,
+    onnx_path,
+    export_params=True,
+    opset_version=11,
+    do_constant_folding=True,
+    input_names=["x"],
+    output_names=["logits"],
+    dynamic_axes=None,
+    dynamo=False,
+)
+
+print(f"Exported ONNX model to {onnx_path}")
