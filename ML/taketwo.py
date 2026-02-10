@@ -34,7 +34,7 @@ WINDOW_SAMPLES = WINDOW_SEC
 STEP_SAMPLES = STEP_SEC                
 
 SEED = 16                              # Random seed
-EPOCHS = 50                            # How many times the data is passed through the model
+EPOCHS = 100                            # How many times the data is passed through the model
 LR = 1e-3                              # Learning rate, or how much the model updates weights each time
 
 
@@ -69,15 +69,46 @@ df["label"] = df["ss"].map(label_map).astype(int)
 
 # hrv
 hr = df["hr"].to_numpy()
-rmssd = np.zeros(len(hr))
 
-for start in range(0, len(hr) - WINDOW_SAMPLES + 1, STEP_SAMPLES):
-    end = start + WINDOW_SAMPLES
-    hr_window = hr[start:end]
-    hr_diff = np.diff(hr_window)
-    rmssd_value = np.sqrt(np.mean(hr_diff**2))
-    rmssd[start:end] = rmssd_value
-df["hr_rmssd"] = rmssd
+# --- online causal RMSSD (reset per subject) ---
+df["hr_rmssd"] = np.zeros(len(df), dtype=float)
+
+for sid, g in df.groupby("subject_id", sort=False):
+    idxs = g.index.to_numpy()
+    hr = g["hr"].to_numpy()
+
+    rmssd = np.zeros(len(hr), dtype=float)
+
+    # ---- persistent hardware state ----
+    prev_hr = hr[0]
+    diff2_buf = np.zeros(WINDOW_SEC - 1)
+    buf_idx = 0
+    sum_diff2 = 0.0
+
+    # ---- streaming update ----
+    for n in range(1, len(hr)):
+        diff = hr[n] - prev_hr
+        diff2 = diff * diff
+
+        # subtract oldest, add newest
+        sum_diff2 -= diff2_buf[buf_idx]
+        sum_diff2 += diff2
+        diff2_buf[buf_idx] = diff2
+
+        # advance circular buffer
+        buf_idx += 1
+        if buf_idx == (WINDOW_SEC - 1):
+            buf_idx = 0
+
+        # valid only after full window
+        #if n >= (WINDOW_SEC - 1):
+        rmssd[n] = sum_diff2 / (WINDOW_SEC - 1)   # sqrt intentionally omitted
+
+        prev_hr = hr[n]
+
+    df.loc[idxs, "hr_rmssd"] = rmssd
+
+
 
 # combining hrv and movement
 df["hrv_mov"] = df["hr_rmssd"] / (df["movement"] + EPS)
@@ -85,14 +116,17 @@ df["hrv_mov"] = df["hr_rmssd"] / (df["movement"] + EPS)
 
 features = [
     "movement",    # body movement magnitude from accel
-    "cosine",      # circadian/time-of-day signal
+    "cosine",      # cosine of time in seconds over 24 hr period
     "delta_hr",    # change in heartrate from baseline
-    "hr_rmssd",    # hrv
-    "hrv_mov"      # hrv and movement
+    "hr_rmssd"    # hrv
+    #"hrv_mov"      # hrv and movement
 ]
 
 X = df[features].fillna(0).to_numpy()
 y = df["label"].to_numpy()
+data_ex = df[features].copy()
+data_ex.to_csv("processed_sleep_dataset.csv", index=False)
+
 
 # train / test split by ID
 np.random.seed(SEED)
