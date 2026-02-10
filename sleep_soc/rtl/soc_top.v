@@ -11,7 +11,8 @@ module soc_top #(
     parameter GPIO_BASE   = 32'h0300_0000,
     parameter PWR_BASE    = 32'h0300_1000,
     parameter TIMER_BASE  = 32'h0300_2000,
-    parameter ML_BASE     = 32'h0300_3000
+    parameter ML_BASE     = 32'h0300_3000,
+    parameter TEST_BASE = 32'h0300_F000
 )(
     input  wire        clk,        // always-on clock
     input  wire        resetn,     // active-low reset (always-on)
@@ -138,7 +139,7 @@ module soc_top #(
         .mem_wdata(mem_wdata),
         .mem_wstrb(mem_wstrb),
         .mem_ready(timer_ready),
-        .mem_rdata(timer_ml_rdata_unused),
+        .mem_rdata(),
         .event_o  (timer_event),
         .rdata_o  (timer_rdata)
     );
@@ -185,14 +186,34 @@ module soc_top #(
         .cpu_awake_i(cpu_clk_en)
     );
 
+    wire        test_ready;
+    wire [31:0] test_rdata;
+    wire [31:0] test_status, test_code;
+
+    test_mmio #(.BASE_ADDR(TEST_BASE)) u_test (
+        .clk(clk), .resetn(resetn),
+        .mem_valid(mmio_sel),
+        .mem_addr(mem_addr),
+        .mem_wdata(mem_wdata),
+        .mem_wstrb(mem_wstrb),
+        .mem_ready(test_ready),
+        .mem_rdata(test_rdata),
+        .status_o(test_status),
+        .code_o(test_code)
+    );
+
+
+
+
     // MMIO bus response mux (to PicoRV32)
-    wire mmio_ready = gpio_ready | pwr_ready | timer_ready | ml_ready;
+    wire mmio_ready = gpio_ready | pwr_ready | timer_ready | ml_ready | test_ready;
 
     wire [31:0] mmio_rdata =
         gpio_ready  ? gpio_rdata  :
         pwr_ready   ? pwr_rdata   :
         timer_ready ? timer_rdata :
         ml_ready    ? ml_rdata    :
+        test_ready  ? test_rdata  :
         32'h0000_0000;
 
     // Overall ready/data to CPU
