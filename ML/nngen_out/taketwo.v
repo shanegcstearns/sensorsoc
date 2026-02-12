@@ -1,4 +1,27 @@
-
+// [Register Map]
+//     0 (R ): header0 (default: 0x00000000)
+//     4 (R ): header1 (default: 0x00000000)
+//     8 (R ): header2 (default: 0x00000000)
+//    12 (R ): header3 (default: 0x00000000)
+//    16 ( W): Start (set '1' to run)
+//    20 (R ): Busy (returns '1' when running)
+//    24 ( W): Reset (set '1' to initialize internal logic)
+//    28 (R ): Opcode from extern objects to SW (returns '0' when idle)
+//    32 ( W): Resume extern objects (set '1' to resume)
+//    36 (R ): Interrupt Status Register
+//    40 ( W): Interrupt Enable Register
+//    44 ( W): Interrupt Acknowledge Register
+//    48 (R ): State Counter
+//    52 ( W): Count Target
+//    56 ( W): Count Divider
+//    60 (  ): Reserved ...
+//   120 (  ): ... Reserved
+//   124 (R ): Address space amount
+//   128 (RW): Global address offset (default: 0)
+//   132 (RW): Address of temporal storages (size: 192B)
+//   136 (RW): Address of output (matmul) '/base/net/net.4/Gemm' (size: 64B, dtype: int16, shape: (1, 2), alignment: 2 words (4 bytes)), aligned shape: (1, 2)
+//   140 (RW): Address of placeholder 'x' (size: 64B, dtype: int16, shape: (1, 4), alignment: 2 words (4 bytes)), aligned shape: (1, 4)
+//   144 (RW): Address of variables 'base.net.0.weight', 'base.net.0.bias', 'onnx_/base/net/net.0/Gemm_gemm.scale', 'base.net.2.weight', 'base.net.2.bias', 'onnx_/base/net/net.2/Gemm_gemm.scale', 'base.net.4.weight', 'base.net.4.bias', 'onnx_/base/net/net.4/Gemm_gemm.scale' (size: 6KB)
 
 module taketwo
 (
