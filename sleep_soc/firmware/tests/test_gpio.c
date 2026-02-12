@@ -11,8 +11,8 @@
 #define TEST_CODE      (TEST_BASE + 0x4u)
 
 // PASS/FAIL magic values
-#define TEST_PASS      0xCAFE BABEu
-#define TEST_FAIL      0xDEAD BEEFu
+#define TEST_PASS      0xCAFEBABEu
+#define TEST_FAIL      0xDEADBEEFu
 
 // ----------------------
 // Volatile MMIO pointers
