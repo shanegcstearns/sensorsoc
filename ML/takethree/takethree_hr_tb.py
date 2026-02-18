@@ -3,14 +3,8 @@ import random
 import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import RisingEdge
-
-# Try pandas (recommended)
-try:
-    import pandas as pd
-    import numpy as np
-except Exception:
-    pd = None
-    np = None
+import pandas as pd
+import numpy as np
 
 # Match your preprocessing
 SETUP_MAX_SAMPLES = int(os.getenv("SETUP_MAX_SAMPLES", "600"))  # 10*60*1
@@ -67,58 +61,26 @@ def conf_counts(y_true, y_pred):
 
 def build_samples_from_compiled_csv(path: str):
     """
-    Accepts your compiled_sleep_dataset.csv format:
-      subject_id, subject_orig, time, hr, movement, cosine, ss
-
+    Reads the preprocessed CSV 
     Produces list of tuples: (hr_q8, label)
     """
-    if pd is None:
-        raise RuntimeError("pandas/numpy not available in your cocotb venv; install them or use a preprocessed hr_q8,label CSV.")
-
     df = pd.read_csv(path)
-    need = ["subject_id", "hr", "ss"]
-    for c in need:
-        if c not in df.columns:
-            raise RuntimeError(f"Missing required column '{c}'. Columns are: {list(df.columns)}")
-
-    # baseline per subject from first SETUP_MAX_SAMPLES rows, prefer W rows
-    resting = {}
-    for sid, g in df.groupby("subject_id", sort=False):
-        g = g.reset_index(drop=True)
-        early = g.iloc[:SETUP_MAX_SAMPLES]
-        wake_hr = early.loc[early["ss"] == "W", "hr"].values
-        if len(wake_hr) > 0:
-            resting[sid] = float(np.median(wake_hr))
-        else:
-            resting[sid] = float(early["hr"].mean())
-
-    df["hr_baseline"] = df["subject_id"].map(resting)
-    df["delta_hr"] = (df["hr"] - df["hr_baseline"]) / (df["hr_baseline"] + EPS)
-
-    # remove wake + keep only labeled stages
-    df = df[~df["ss"].isin(["W"])]
-    df = df[df["ss"].isin(LABEL_MAP.keys())].copy()
-    df["label"] = df["ss"].map(LABEL_MAP).astype(int)
-
-    # split by subject like your training script (optional)
-    split = os.getenv("SPLIT", "test").lower()   # test/train/all
-    if split in ("test", "train"):
-        rng = np.random.RandomState(SEED)
-        subject_ids = df["subject_id"].unique()
-        # match your original "22 train subjects" behavior if possible
-        n_train = min(22, len(subject_ids))
-        train_subs = rng.choice(subject_ids, size=n_train, replace=False)
-        if split == "train":
-            df = df[df["subject_id"].isin(train_subs)]
-        else:
-            df = df[~df["subject_id"].isin(train_subs)]
 
     # convert to Q8
     df["hr_q8"] = np.round(df["delta_hr"] * 256.0).astype(int)
     df["hr_q8"] = df["hr_q8"].clip(-32768, 32767)
 
+    df["hr_rmssd_q8"] = np.round(df["hr_rmssd"] * 256.0).astype(int)
+    df["hr_rmssd_q8"] = df["hr_rmssd_q8"].clip(-32768, 32767)
+    
+    df["movement"] = np.round(df["movement"] * 256.0).astype(int)
+    df["movement"] = df["movement"].clip(-32768, 32767)
+    
+    df["cosine"] = np.round(df["cosine"] * 256.0).astype(int)
+    df["cosine"] = df["cosine"].clip(-32768, 32767)
+
     # optionally cap to keep simulation fast
-    max_samples = int(os.getenv("MAX_SAMPLES", "2000"))
+    max_samples = int(os.getenv("MAX_SAMPLES", "5000"))
     if max_samples > 0 and len(df) > max_samples:
         df = df.iloc[:max_samples]
 
@@ -126,11 +88,20 @@ def build_samples_from_compiled_csv(path: str):
     return samples
 
 @cocotb.test()
-async def test_accuracy_compiled_csv(dut):
+async def reset_test(dut): #simple reset test behavior test
+    
+@cocotb.test()
+async def sleep_test(dut): #long pause between tests to check for any state retention issues
+    
+@cocotb.test()
+async def overload_test(dut): #send samples as fast as possible to check for any timing issues or bottlenecks
+
+@cocotb.test()
+async def test_accuracy_compiled_csv(dut): #main test we should be running, emulating python test
     cocotb.start_soon(Clock(dut.clk, 10, units="ns").start())
     await reset(dut)
 
-    dataset = os.getenv("DATASET_CSV", "compiled_sleep_dataset.csv")
+    dataset = os.getenv("DATASET_CSV", "processed_sleep_dataset.csv")
     if not os.path.exists(dataset):
         raise RuntimeError(f"DATASET_CSV not found: {dataset}")
 
