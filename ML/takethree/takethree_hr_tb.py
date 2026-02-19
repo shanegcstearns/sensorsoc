@@ -84,7 +84,7 @@ def build_samples_from_compiled_csv(path: str):
     if max_samples > 0 and len(df) > max_samples:
         df = df.iloc[:max_samples]
 
-    samples = list(zip(df["hr_q8"].astype(int).tolist(), df["label"].astype(int).tolist()))
+    samples = list(zip(df["hr_q8"].astype(int).tolist(), df["hr_rmssd_q8"].astype(int).tolist(), df["movement"].astype(int).tolist(), df["cosine"].astype(int).tolist(), df["label"].astype(int).tolist()))
     return samples
 
 @cocotb.test()
@@ -97,7 +97,7 @@ async def sleep_test(dut): #long pause between tests to check for any state rete
 async def overload_test(dut): #send samples as fast as possible to check for any timing issues or bottlenecks
 
 @cocotb.test()
-async def test_accuracy_compiled_csv(dut): #main test we should be running, emulating python test
+async def test_accuracy_compiled_csv(dut): #main test we should be running, simulating python test
     cocotb.start_soon(Clock(dut.clk, 10, units="ns").start())
     await reset(dut)
 
