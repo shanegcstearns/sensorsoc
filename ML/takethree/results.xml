@@ -1,0 +1,9 @@
+<testsuites name="results">
+  <testsuite name="all" package="all">
+    <property name="random_seed" value="1771468112" />
+    <testcase name="reset_test" classname="ml_model_tb" file="/home/jfriday/sensorsoc/ML/takethree/ml_model_tb.py" lineno="91" time="0.0027055740356445312" sim_time_ns="60.0" ratio_time="22176.439901304195" />
+    <testcase name="test_accuracy_compiled_csv" classname="ml_model_tb" file="/home/jfriday/sensorsoc/ML/takethree/ml_model_tb.py" lineno="104" time="0.05718207359313965" sim_time_ns="70.0" ratio_time="1224.1598739154183">
+      <failure error_type="ValueError" error_msg="operands could not be broadcast together with shapes (22973,) (32,) " />
+    </testcase>
+  </testsuite>
+</testsuites>

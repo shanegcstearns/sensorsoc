@@ -40,6 +40,7 @@ module soc_top #(
     wire [31:0] mem_wdata;
     wire [3:0]  mem_wstrb;
     wire [31:0] mem_rdata;
+    wire trap;
 
     // IRQ not required yet, add later
     wire [31:0] irq = 32'b0;
@@ -71,7 +72,8 @@ module soc_top #(
         .mem_wdata (mem_wdata),
         .mem_wstrb (mem_wstrb),
         .mem_rdata (mem_rdata),
-        .irq       (irq)
+        .irq       (irq),
+        .trap      (trap) 
     );
 
     // Address map
@@ -247,7 +249,8 @@ module soc_top #(
                 cpu_clk_en <= 1'b1;
             end else if (cpu_clk_en) begin
                 // Only gate if firmware asked + CPU appears idle
-                if (sleep_req && cpu_idle_seen) begin
+                //TEMP FOR VERIFICATION
+                if (sleep_req) begin
                     cpu_clk_en <= 1'b0;
                 end
             end
@@ -283,6 +286,9 @@ module simple_sram #(
         if (INIT_HEX != "") begin
             $display("simple_sram: loading INIT_HEX=%s", INIT_HEX);
             $readmemh(INIT_HEX, mem);
+            $display("SRAM[0]=%08x SRAM[1]=%08x SRAM[2]=%08x SRAM[3]=%08x",
+         mem[0], mem[1], mem[2], mem[3]);
+
         end else begin
             // default clear (optional)
             for (i = 0; i < WORDS; i = i + 1)
