@@ -74,19 +74,29 @@ module motion_preprocess_tb;
   );
 
   // 50 MHz
-  always #10 clk = ~clk;
+  always #10 clk = about clk;
 
-  task automatic send_sample(input int sax, input int say, input int saz);
+  task automatic send_sample(input int sax, input int say, input int saz, input bit ok);
     begin
-      // Drive on negedge to avoid race with DUT posedge flops.
       @(negedge clk);
       ax = sax;
       ay = say;
       az = saz;
-      sample_ok = 1'b1;
+      sample_ok = ok;
       sample_valid = 1'b1;
+      @(posedge clk);
       @(negedge clk);
       sample_valid = 1'b0;
+      sample_ok = 1'b0;
+    end
+  endtask
+
+  task automatic do_reset();
+    begin
+      resetn = 0;
+      repeat (5) @(posedge clk);
+      resetn = 1;
+      repeat (2) @(posedge clk);
     end
   endtask
 
@@ -116,6 +126,8 @@ module motion_preprocess_tb;
   end
 
   initial begin
+    bit still_seen;
+    logic [16:0] dyn_first;
     sample_valid = 0;
     sample_ok    = 0;
     ax = '0; ay = '0; az = '0;
@@ -129,14 +141,86 @@ module motion_preprocess_tb;
     cfg_epoch_len   = 16'd16;
     cfg_energy_sq   = 1'b0;
 
-    resetn = 0;
-    repeat (10) @(posedge clk);
-    resetn = 1;
+    do_reset();
 
-    // A) steady still: no bursts, energy ~0, stillness count == epoch_len
+    // test 1: sample ok gating + mag/dyn/energy
+    cfg_hp_en      = 1'b0;
+    cfg_energy_sq  = 1'b0;
+    cfg_epoch_len  = 16'd4;
+    cfg_th_hi      = 17'd2000;
+    cfg_th_lo      = 17'd1500;
+    cfg_still_th   = 17'd200;
+    cfg_debounce_n = 8'd2;
     burst_pulses_seen = 0;
     epoch_done_seen = 0;
-    repeat (16) send_sample(0, 0, 0);
+    send_sample(10, 0, 0, 1'b0);
+    if (motion_valid) $fatal(1, "sample_ok gating: motion_valid asserted with sample_ok=0");
+    send_sample(3, -4, 5, 1'b1); // prime
+    send_sample(0, 0, 0, 1'b1);  // check previous sample
+    if (!motion_valid) $fatal(1, "mag/dyn: motion_valid not asserted");
+    if (motion_mag !== 16'd12) $fatal(1, "mag mismatch: got=%0d exp=12", motion_mag);
+    if (motion_dyn !== 17'd12) $fatal(1, "dyn mismatch: got=%0d exp=12", motion_dyn);
+    if (motion_energy_accum !== 48'd12) $fatal(1, "energy mismatch: got=%0d exp=12", motion_energy_accum);
+
+    // test 2: epoch_len=0 treated as 1
+    do_reset();
+    cfg_hp_en      = 1'b0;
+    cfg_energy_sq  = 1'b0;
+    cfg_epoch_len  = 16'd0;
+    cfg_th_hi      = 17'd1000;
+    cfg_th_lo      = 17'd500;
+    cfg_still_th   = 17'd1;
+    cfg_debounce_n = 8'd2;
+    epoch_done_seen = 0;
+    send_sample(1, 0, 0, 1'b1);
+    if (!epoch_done) $fatal(1, "epoch_len=0: epoch_done not asserted");
+    if (sample_count_epoch != 16'd1) $fatal(1, "epoch_len=0: sample_count_epoch=%0d", sample_count_epoch);
+    if (motion_energy_epoch != 48'd0) $fatal(1, "epoch_len=0: motion_energy_epoch=%0d", motion_energy_epoch);
+
+    // test 3: energy_sq mode with epoch_len=1
+    do_reset();
+    cfg_hp_en      = 1'b0;
+    cfg_energy_sq  = 1'b1;
+    cfg_epoch_len  = 16'd1;
+    cfg_th_hi      = 17'd1000;
+    cfg_th_lo      = 17'd500;
+    cfg_still_th   = 17'd1;
+    cfg_debounce_n = 8'd2;
+    send_sample(3, 0, 0, 1'b1); // prime
+    send_sample(4, 0, 0, 1'b1); // check energy for previous sample
+    if (!epoch_done) $fatal(1, "energy_sq: epoch_done not asserted");
+    if (motion_energy_epoch != 48'd9) $fatal(1, "energy_sq: motion_energy_epoch=%0d", motion_energy_epoch);
+
+    // test 4: debounce_n=0 treated as 1, burst enter/exit
+    do_reset();
+    cfg_hp_en      = 1'b0;
+    cfg_energy_sq  = 1'b0;
+    cfg_epoch_len  = 16'd8;
+    cfg_th_hi      = 17'd10;
+    cfg_th_lo      = 17'd5;
+    cfg_still_th   = 17'd1;
+    cfg_debounce_n = 8'd0;
+    burst_pulses_seen = 0;
+    send_sample(20, 0, 0, 1'b1); // prime high
+    send_sample(0, 0, 0, 1'b1);  // should enter burst based on previous sample
+    if (!burst_pulse) $fatal(1, "debounce=0: burst_pulse not asserted");
+    if (!in_burst) $fatal(1, "debounce=0: in_burst not asserted");
+    send_sample(0, 0, 0, 1'b1);  // should exit burst based on previous low
+    if (in_burst) $fatal(1, "burst exit: in_burst not cleared");
+
+    // test 5: steady still: no bursts, energy about 0, stillness count == epoch_len
+    do_reset();
+    cfg_hp_en       = 0;
+    cfg_ewma_shift  = 4;
+    cfg_th_hi       = 17'd1000;
+    cfg_th_lo       = 17'd500;
+    cfg_still_th    = 17'd50;
+    cfg_debounce_n  = 8'd2;
+    cfg_epoch_len   = 16'd16;
+    cfg_energy_sq   = 1'b0;
+    burst_pulses_seen = 0;
+    epoch_done_seen = 0;
+    repeat (16) send_sample(0, 0, 0, 1'b1);
     repeat (2) @(posedge clk);
     if (burst_pulses_seen != 0) $fatal(1, "steady still: unexpected burst pulses=%0d", burst_pulses_seen);
     if (!epoch_done_seen) $fatal(1, "steady still: did not observe epoch_done");
@@ -144,38 +228,41 @@ module motion_preprocess_tb;
     if (cap_motion_energy_epoch != 0) $fatal(1, "steady still: motion_energy_epoch=%0d", cap_motion_energy_epoch);
     if (cap_stillness_count_epoch != cfg_epoch_len) $fatal(1, "steady still: stillness_count_epoch=%0d", cap_stillness_count_epoch);
 
-    // B) single spike with higher debounce: should not enter burst
+    // test 6: single spike with higher debounce: should not enter burst
     cfg_debounce_n = 8'd3;
     burst_pulses_seen = 0;
-    send_sample(2000, 0, 0);
-    repeat (5) send_sample(0, 0, 0);
+    send_sample(2000, 0, 0, 1'b1);
+    repeat (5) send_sample(0, 0, 0, 1'b1);
     repeat (2) @(posedge clk);
     if (burst_pulses_seen != 0) $fatal(1, "single spike: debounce failed, pulses=%0d", burst_pulses_seen);
 
-    // C) periodic movement: expect 2 bursts (enter events) over a short run
+    // test 7: periodic movement: expect 2 bursts over short run
     cfg_debounce_n = 8'd2;
     cfg_th_hi      = 17'd1200;
     cfg_th_lo      = 17'd600;
     burst_pulses_seen = 0;
-    repeat (4) send_sample(0, 0, 0);
-    repeat (5) send_sample(1500, 0, 0); // enter + stay
-    repeat (4) send_sample(0, 0, 0);    // exit
-    repeat (3) send_sample(1500, 0, 0); // enter again
-    repeat (4) send_sample(0, 0, 0);
+    repeat (4) send_sample(0, 0, 0, 1'b1);
+    repeat (5) send_sample(1500, 0, 0, 1'b1); // enter + stay
+    repeat (4) send_sample(0, 0, 0, 1'b1);    // exit
+    repeat (3) send_sample(1500, 0, 0, 1'b1); // enter again
+    repeat (4) send_sample(0, 0, 0, 1'b1);
     repeat (2) @(posedge clk);
     if (burst_pulses_seen != 2) $fatal(1, "periodic: expected 2 burst pulses, got %0d", burst_pulses_seen);
 
-    // D) slow "gravity-only" change with baseline removal enabled: no bursts
+    // test 8: baseline removal enabled: constant signal should settle to about 0 dyn
+    do_reset();
     cfg_hp_en      = 1'b1;
     cfg_ewma_shift = 2;        // fast baseline tracking
-    cfg_th_hi      = 17'd500;
-    cfg_th_lo      = 17'd250;
+    cfg_th_hi      = 17'd2000;
+    cfg_th_lo      = 17'd1500;
+    cfg_still_th   = 17'd5;
     cfg_debounce_n = 8'd2;
     burst_pulses_seen = 0;
-    for (int i = 0; i < 64; i++) begin
-      send_sample(i*64, 0, 0); // slow ramp
-    end
-    repeat (2) @(posedge clk);
+    send_sample(1000, 0, 0, 1'b1); // ramp baseline toward constant input
+    send_sample(1000, 0, 0, 1'b1);
+    dyn_first = motion_dyn;
+    repeat (9) send_sample(1000, 0, 0, 1'b1);
+    if (motion_dyn >= dyn_first) $fatal(1, "baseline removal: dyn did not decrease (peak=%0d now=%0d)", dyn_first, motion_dyn);
     if (burst_pulses_seen != 0) $fatal(1, "baseline removal: unexpected bursts=%0d", burst_pulses_seen);
 
     $display("PASS");
