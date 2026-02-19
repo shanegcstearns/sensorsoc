@@ -46,17 +46,19 @@ module motion_preprocess #(
     output reg  [15:0]              sample_count_epoch_o
 );
 
+    wire sample_fire = sample_valid_i && sample_ok_i;
+
     wire [15:0] epoch_len_eff = (cfg_epoch_len_i == 16'd0) ? 16'd1 : cfg_epoch_len_i;
     wire [7:0]  debounce_eff  = (cfg_debounce_n_i == 8'd0) ? 8'd1 : cfg_debounce_n_i;
 
-    // Latch raw samples on posedge clk
+    // latch raw samples on posedge clk
     reg signed [AX_W-1:0] ax_r, ay_r, az_r;
     always @(posedge clk) begin
         if (!resetn) begin
             ax_r <= '0;
             ay_r <= '0;
             az_r <= '0;
-        end else if (sample_valid_i && sample_ok_i) begin
+        end else if (sample_fire) begin
             ax_r <= ax_i;
             ay_r <= ay_i;
             az_r <= az_i;
@@ -80,7 +82,7 @@ module motion_preprocess #(
                             + {{(MAG_W-AX_W){1'b0}}, abs_ay}
                             + {{(MAG_W-AX_W){1'b0}}, abs_az};
 
-    // Baseline EWMA and dynamic component
+    // baseline ewma and dynamic component
     reg [MAG_W-1:0] base_r;
     reg             base_init_r;
 
@@ -102,27 +104,27 @@ module motion_preprocess #(
     wire [DYN_W-1:0] dyn_nohp_w = {{(DYN_W-MAG_W){1'b0}}, mag1_w};
     wire [DYN_W-1:0] dyn_sel_w  = cfg_hp_en_i ? dyn_hp_w : dyn_nohp_w;
 
-    // Energy increment
+    // energy increment
     wire [ENERGY_W-1:0] dyn_ext = {{(ENERGY_W-DYN_W){1'b0}}, dyn_sel_w};
     wire [2*DYN_W-1:0]  dyn_sq_w = dyn_sel_w * dyn_sel_w;
     wire [ENERGY_W-1:0] dyn_sq_ext = (2*DYN_W >= ENERGY_W) ? dyn_sq_w[ENERGY_W-1:0]
                                                            : {{(ENERGY_W-2*DYN_W){1'b0}}, dyn_sq_w};
     wire [ENERGY_W-1:0] energy_add_w = cfg_energy_sq_i ? dyn_sq_ext : dyn_ext;
 
-    // Burst detector
+    // burst detector
     reg [7:0]  hi_cnt_r;
     reg [15:0] burst_count_r;
 
     wire dyn_gt_hi = (dyn_sel_w > cfg_th_hi_i);
     wire dyn_lt_lo = (dyn_sel_w < cfg_th_lo_i);
 
-    // Stillness per sample + epoch counter
+    // stillness per sample + epoch counter
     reg [15:0] still_cnt_r;
     wire still_w = (dyn_sel_w < cfg_still_th_i);
 
     wire will_enter_burst_w = (!in_burst_o) && dyn_gt_hi && (hi_cnt_r >= (debounce_eff - 8'd1));
 
-    // Epoch counters and previous epoch for delta
+    // epoch counters and previous epoch for delta
     reg [15:0]         epoch_cnt_r;
     reg [ENERGY_W-1:0] prev_epoch_energy_r;
 
@@ -160,7 +162,7 @@ module motion_preprocess #(
             if (sample_fire) begin
                 motion_mag_o <= mag1_w;
 
-                // Baseline update and dyn computation
+                // baseline update and dyn computation
                 if (cfg_hp_en_i) begin
                     if (!base_init_r) begin
                         base_r      <= mag1_w;
@@ -175,11 +177,11 @@ module motion_preprocess #(
                     motion_dyn_o  <= dyn_nohp_w;
                 end
 
-                // Stillness
+                // stillness flag and counter
                 stillness_flag_o <= still_w;
                 if (still_w) still_cnt_r <= still_cnt_r + 16'd1;
 
-                // Burst logic with debounce
+                // burst logic
                 if (!in_burst_o) begin
                     if (dyn_gt_hi) begin
                         if (hi_cnt_r != debounce_eff) hi_cnt_r <= hi_cnt_r + 8'd1;
@@ -200,10 +202,10 @@ module motion_preprocess #(
                     end
                 end
 
-                // Energy accumulation
+                // energy accumulation
                 motion_energy_accum_o <= motion_energy_accum_o + energy_add_w;
 
-                // Epoch handling (counts valid samples)
+                // epoch handling (counts valid samples)
                 epoch_cnt_r <= epoch_cnt_r + 16'd1;
 
                 if (epoch_cnt_r == (epoch_len_eff - 16'd1)) begin
@@ -216,7 +218,7 @@ module motion_preprocess #(
                     stillness_count_epoch_o <= still_cnt_r + (still_w ? 16'd1 : 16'd0);
                     sample_count_epoch_o    <= epoch_cnt_r + 16'd1;
 
-                    // reset epoch accumulators for next epoch
+                    // reset epoch counters for next epoch
                     motion_energy_accum_o   <= {ENERGY_W{1'b0}};
                     epoch_cnt_r             <= 16'd0;
                     burst_count_r           <= 16'd0;
