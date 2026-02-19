@@ -6,19 +6,26 @@
 #   - Simple firmware build (RISC-V GCC -> .elf/.bin/.hex)
 #
 # Usage:
-#   make sim-soc                    # compile + run tb_soc (reads firmware/build/firmware.hex)
-#   make test-mmio                  # cocotb for test_mmio
-#   make test-timer                 # cocotb for timer_mmio
-#   make firmware-sleepwake         # rebuild firmware/build/firmware.hex from firmware/tests/test_sleepwake.c
-#   make firmware-gpio              # rebuild test_gpio artifacts
-#   make clean                      # remove build outputs
+#   make sim-soc                     # compile + run tb_soc (reads firmware/build/firmware.hex)
+#   make test-mmio                   # cocotb for test_mmio
+#   make test-timer                  # cocotb for timer_mmio
+#   make firmware-sleepwake          # firmware from firmware/tests/test_sleepwake.c
+#   make firmware-gpio               # firmware from firmware/tests/test_gpio.c
+#   make firmware-sleepwake-periodic # firmware from firmware/tests/test_sleepwake_periodic.c
+#   make clean                       # remove build outputs
+#
+# NOTE:
+#   This Makefile expects a small helper script at:
+#     tools/bin2hex.py
+#   which converts firmware/build/firmware.bin -> firmware/build/firmware.hex
+#   as 32-bit little-endian words (one word per line), suitable for $readmemh.
 
 SHELL := /bin/bash
 
 # ----------------------------
 # Tools
 # ----------------------------
-PYTHON      ?= python3
+PYTHON       ?= python3
 IVERILOG     ?= iverilog
 VVP          ?= vvp
 
@@ -36,6 +43,9 @@ SIM_BUILD    := sim/build
 FW_DIR       := firmware
 FW_BUILD     := $(FW_DIR)/build
 FW_TESTS     := $(FW_DIR)/tests
+TOOLS_DIR    := tools
+
+BIN2HEX_PY   := $(TOOLS_DIR)/bin2hex.py
 
 # Ensure output dirs exist
 $(SIM_BUILD) $(FW_BUILD):
@@ -54,10 +64,9 @@ SOC_RTL_SRCS := \
   $(RTL_DIR)/pwrctrl_mmio.v
 
 SOC_TB_SRCS  := $(TB_DIR)/tb_soc.sv
-
 SOC_VVP      := sim_soc.vvp
 
-# Default firmware hex used by soc_top
+# Default firmware outputs used by soc_top
 FW_HEX       := $(FW_BUILD)/firmware.hex
 FW_ELF       := $(FW_BUILD)/firmware.elf
 FW_BIN       := $(FW_BUILD)/firmware.bin
@@ -74,7 +83,6 @@ export PYGPI_PYTHON_BIN := $(shell $(PYTHON) -c "import sys; print(sys.executabl
 # Make sure cocotb can import your tests
 export PYTHONPATH := $(abspath $(TB_DIR))
 
-# Icarus runner command (uses COCOTB_TOPLEVEL + COCOTB_TEST_MODULES env vars)
 define RUN_COCOTB_ICARUS
 	$(VVP) -M "$(COCOTB_LIBDIR)" -m libcocotbvpi_icarus $1
 endef
@@ -82,37 +90,18 @@ endef
 # ----------------------------
 # Firmware build rules
 # ----------------------------
-# The "canonical" firmware for tb_soc is firmware/build/firmware.hex.
+# The canonical firmware for tb_soc is firmware/build/firmware.hex.
 # Choose which C file populates it by calling:
 #   make firmware-sleepwake
 #   make firmware-gpio
-#
-# If you want to switch tests often, just rebuild the one you want
-# before running make sim-soc.
+#   make firmware-sleepwake-periodic
 
-# Converts .bin -> .hex as 32-bit little-endian words (one word per line)
-# This format matches $readmemh into a 32-bit memory array.
-define BIN_TO_HEX_PY
-import pathlib, struct
-data = pathlib.Path("$(FW_BIN)").read_bytes()
-if len(data) % 4 != 0:
-    data += b"\x00" * (4 - (len(data) % 4))
-out_lines = []
-for i in range(0, len(data), 4):
-    word = struct.unpack_from("<I", data, i)[0]
-    out_lines.append(f"{word:08x}")
-pathlib.Path("$(FW_HEX)").write_text("\n".join(out_lines) + "\n")
-print(f"Wrote $(FW_HEX) with {len(out_lines)} 32-bit words")
-endef
-
-# Build firmware from a chosen test C file (param)
-# Usage: make FW_SRC=tests/test_sleepwake.c firmware
 FW_SRC ?= $(FW_TESTS)/test_sleepwake.c
 
 .PHONY: firmware
 firmware: $(FW_HEX)
 
-$(FW_HEX): $(FW_DIR)/start.S $(FW_DIR)/linker.ld $(FW_SRC) | $(FW_BUILD)
+$(FW_HEX): $(FW_DIR)/start.S $(FW_DIR)/linker.ld $(FW_SRC) $(BIN2HEX_PY) | $(FW_BUILD)
 	@echo "[FW] Building $(FW_SRC) -> $(FW_HEX)"
 	$(RISCV_GCC) \
 	  -march=rv32imc -mabi=ilp32 \
@@ -122,14 +111,18 @@ $(FW_HEX): $(FW_DIR)/start.S $(FW_DIR)/linker.ld $(FW_SRC) | $(FW_BUILD)
 	  $(FW_DIR)/start.S \
 	  $(FW_SRC)
 	$(RISCV_OBJCOPY) -O binary $(FW_ELF) $(FW_BIN)
-	$(PYTHON) - <<'PY'\n$(BIN_TO_HEX_PY)\nPY
+	@echo "[FW] Converting $(FW_BIN) -> $(FW_HEX) (32-bit little-endian words)"
+	@$(PYTHON) $(BIN2HEX_PY) $(FW_BIN) $(FW_HEX)
 
-.PHONY: firmware-sleepwake firmware-gpio
+.PHONY: firmware-sleepwake firmware-gpio firmware-sleepwake-periodic
 firmware-sleepwake:
 	@$(MAKE) FW_SRC=$(FW_TESTS)/test_sleepwake.c firmware
 
 firmware-gpio:
 	@$(MAKE) FW_SRC=$(FW_TESTS)/test_gpio.c firmware
+
+firmware-sleepwake-periodic:
+	@$(MAKE) FW_SRC=$(FW_TESTS)/test_sleepwake_periodic.c firmware
 
 # ----------------------------
 # SoC simulation (SystemVerilog tb)
@@ -209,6 +202,7 @@ show-tree:
 	@echo "RISCV_GCC=$(RISCV_GCC)"
 	@echo "FW_SRC=$(FW_SRC)"
 	@echo "TIMER_PYMOD=$(TIMER_PYMOD)"
+	@echo "BIN2HEX_PY=$(BIN2HEX_PY)"
 
 # ----------------------------
 # Clean
