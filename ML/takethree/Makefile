@@ -1,10 +1,12 @@
-SIM ?= icarus
+SIM ?= verilator
 TOPLEVEL_LANG ?= verilog
 
-VERILOG_SOURCES := $(PWD)/takethree_hr.sv
+VERILOG_SOURCES := $(PWD)/takethree.sv
 
-TOPLEVEL := takethree_hr
-MODULE   := takethree_hr_tb
+TOPLEVEL := takethree
+MODULE   := ml_model_tb
+
+#COMPILE_ARGS += -g2012
 
 export DATASET_CSV ?= $(PWD)/processed_sleep_dataset.csv
 export SPLIT ?= test

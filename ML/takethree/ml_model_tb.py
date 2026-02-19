@@ -60,7 +60,7 @@ def conf_counts(y_true, y_pred):
     tp = sum((t == 1 and p == 1) for t, p in zip(y_true, y_pred))
     return tn, fp, fn, tp
 
-def build_samples_from_compiled_csv(path: str):
+def build_samples_from_compiled_csv(path: str, scale_hr, scale_rmssd, scale_movement, scale_cosine):
     """
     Reads the preprocessed CSV 
     Produces list of tuples: (hr_q8, label)
@@ -68,16 +68,16 @@ def build_samples_from_compiled_csv(path: str):
     df = pd.read_csv(path)
 
     # convert to Q8
-    df["hr_q8"] = np.round(df["delta_hr"] * 256.0).astype(int)
+    df["hr_q8"] = np.round(df["delta_hr"] * scale_hr).astype(int)
     df["hr_q8"] = df["hr_q8"].clip(-32768, 32767)
 
-    df["hr_rmssd_q8"] = np.round(df["hr_rmssd"] * 256.0).astype(int)
+    df["hr_rmssd_q8"] = np.round(df["hr_rmssd"] * scale_rmssd).astype(int)
     df["hr_rmssd_q8"] = df["hr_rmssd_q8"].clip(-32768, 32767)
     
-    df["movement_q8"] = np.round(df["movement"] * 256.0).astype(int)
+    df["movement_q8"] = np.round(df["movement"] * scale_movement).astype(int)
     df["movement_q8"] = df["movement_q8"].clip(-32768, 32767)
     
-    df["cosine_q8"] = np.round(df["cosine"] * 256.0).astype(int)
+    df["cosine_q8"] = np.round(df["cosine"] * scale_cosine).astype(int)
     df["cosine_q8"] = df["cosine_q8"].clip(-32768, 32767)
 
     # optionally cap to keep simulation fast
@@ -85,11 +85,14 @@ def build_samples_from_compiled_csv(path: str):
     if max_samples > 0 and len(df) > max_samples:
         df = df.iloc[:max_samples]
 
-    samples = list(zip(df["hr_q8"].astype(int).tolist(), df["hr_rmssd_q8"].astype(int).tolist(), df["movement"].astype(int).tolist(), df["cosine"].astype(int).tolist(), df["label"].astype(int).tolist()))
+    samples = list(zip(df["hr_q8"].astype(int).tolist(), df["hr_rmssd_q8"].astype(int).tolist(), df["movement_q8"].astype(int).tolist(), df["cosine_q8"].astype(int).tolist(), df["label"].astype(int).tolist()))
     return samples
 
-# @cocotb.test()
-# async def reset_test(dut): #simple reset test behavior test
+@cocotb.test()
+async def reset_test(dut): #simple reset test behavior test
+    cocotb.start_soon(Clock(dut.clk, 10, units="ns").start())
+    await reset(dut)
+    assert dut.state_out.value == 0, f"Expected state_out=0 after reset, got {dut.state_out.value}"
     
     
 # @cocotb.test()
@@ -107,7 +110,7 @@ async def test_accuracy_compiled_csv(dut): #main test we should be running, simu
     if not os.path.exists(dataset):
         raise RuntimeError(f"DATASET_CSV not found: {dataset}")
 
-    samples = build_samples_from_compiled_csv(dataset)
+    samples = build_samples_from_compiled_csv(dataset, dut.SCALE_Q0.value, dut.SCALE_Q1.value, dut.SCALE_Q2.value, dut.SCALE_Q3.value)
     dut._log.info(f"Prepared {len(samples)} samples from {dataset} (SPLIT={os.getenv('SPLIT','test')})")
 
     y_true, y_pred = [], []
