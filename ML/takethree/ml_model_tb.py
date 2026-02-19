@@ -29,11 +29,11 @@ async def reset(dut, cycles=5):
     for _ in range(2):
         await RisingEdge(dut.clk)
 
-async def send_sample(dut, hr_q8: int, hr_rmssd_q8: int, movement: int, cosine: int):
+async def send_sample(dut, movement_q8, cosine_q8, hr_q8, hr_rmssd_q8):
     dut.hr_q8.value = int(hr_q8)
     dut.hr_rmssd_q8.value = int(hr_rmssd_q8)
-    dut.movement_q8.value = int(movement)
-    dut.cosine_q8.value = int(cosine)
+    dut.movement_q8.value = int(movement_q8)
+    dut.cosine_q8.value = int(cosine_q8)
     dut.in_valid.value = 1
     while True:
         await RisingEdge(dut.clk)
@@ -60,7 +60,7 @@ def conf_counts(y_true, y_pred):
     tp = sum((t == 1 and p == 1) for t, p in zip(y_true, y_pred))
     return tn, fp, fn, tp
 
-def build_samples_from_compiled_csv(path: str, scale_hr, scale_rmssd, scale_movement, scale_cosine):
+def build_samples_from_compiled_csv(path: str, scale_movement, scale_cosine, scale_hr, scale_rmssd):
     """
     Reads the preprocessed CSV 
     Produces list of tuples: (hr_q8, label)
@@ -110,19 +110,19 @@ async def test_accuracy_compiled_csv(dut): #main test we should be running, simu
     if not os.path.exists(dataset):
         raise RuntimeError(f"DATASET_CSV not found: {dataset}")
 
-    samples = build_samples_from_compiled_csv(dataset, dut.SCALE_Q0.value, dut.SCALE_Q1.value, dut.SCALE_Q2.value, dut.SCALE_Q3.value)
+    samples = build_samples_from_compiled_csv(dataset, int(dut.SCALE_Q0.value), int(dut.SCALE_Q1.value), int(dut.SCALE_Q2.value), int(dut.SCALE_Q3.value))
     dut._log.info(f"Prepared {len(samples)} samples from {dataset} (SPLIT={os.getenv('SPLIT','test')})")
 
     y_true, y_pred = [], []
 
     for k, (hr_q8, hr_rmssd_q8, movement_q8, cosine_q8, label) in enumerate(samples):
-        await send_sample(dut, hr_q8, hr_rmssd_q8, movement_q8, cosine_q8)
+        await send_sample(dut, movement_q8, cosine_q8, hr_q8, hr_rmssd_q8)
         pred, l0, l1 = await recv_sample(dut)
 
         y_true.append(label)
         y_pred.append(pred)
 
-        if k < 5:
+        if k < 10:
             dut._log.info(f"ex{k}: hr_q8={hr_q8} hr_rmssd_q8={hr_rmssd_q8} movement_q8={movement_q8} cosine_q8={cosine_q8} label={label} pred={pred} logit0={l0} logit1={l1}")
 
     correct = sum(int(t == p) for t, p in zip(y_true, y_pred))
