@@ -22,7 +22,7 @@ async def reset_dut(dut, cycles=10):
 @cocotb.test()
 async def load_weights_and_readback(dut):
     await reset_dut(dut)
-
+    clk_i = dut.CLK
     axil = AxiLiteMaster(AxiLiteBus.from_prefix(dut, "saxi"), dut.CLK, dut.RESETN, reset_active_level=False)
 
     # IMPORTANT: use the wrapper top so maxi_*id exists
@@ -46,5 +46,21 @@ async def load_weights_and_readback(dut):
     dut._log.info("OK: weights write+readback matched exactly")
 
     # Print a few chunks so you can eyeball
-    for i in range(0, min(256, len(param_bytes)), 16):
-        dut._log.info(f"param[{i:04d}:{i+16:04d}] = {rb[i:i+16].hex()}")
+    # for i in range(0, min(256, len(param_bytes)), 16):
+    #     dut._log.info(f"param[{i:04d}:{i+16:04d}] = {rb[i:i+16].hex()}")
+        
+        
+    print("Writing START=1 to address 0x10")
+    await axil.write(0x10, {0x00,0x00,0x00,0x01})
+    
+    await ClockCycles(clk_i, 20)
+    
+    busy = le32(await axil.read(0x14, 4))
+    print(f"Check busy signal: {busy}")
+        
+    await axil.write(0x8C,{0x00,0x5D,0x9A,0x00})
+    
+    await ClockCycles(clk_i, 100)
+    
+    read_out_test = await axil.read(0x88, 4) 
+    print(f"Read output test value: 0x{read_out_test}")
