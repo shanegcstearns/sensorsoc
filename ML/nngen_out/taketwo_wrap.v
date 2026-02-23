@@ -1,13 +1,9 @@
-// taketwo_wrap_axiid.v
-// Wraps NNgen taketwo and adds AXI ID ports required by cocotbext-axi.
-// IDs are tied to 0; incoming IDs (from slave) are ignored.
 
 module taketwo_wrap (
   input  wire         CLK,
   input  wire         RESETN,
   output wire         irq,
 
-  // AXI Master (to memory) WITH IDs
   output wire [0:0]   maxi_awid,
   output wire [31:0]  maxi_awaddr,
   output wire [7:0]   maxi_awlen,
@@ -52,7 +48,6 @@ module taketwo_wrap (
   input  wire         maxi_rvalid,
   output wire         maxi_rready,
 
-  // AXI-Lite Slave (control)
   input  wire [31:0]  saxi_awaddr,
   input  wire [2:0]   saxi_awprot,
   input  wire         saxi_awvalid,
@@ -82,13 +77,11 @@ module taketwo_wrap (
   assign maxi_awid = 1'b0;
   assign maxi_arid = 1'b0;
 
-  // Instantiate your NNgen core
   taketwo u_core (
     .CLK(CLK),
     .RESETN(RESETN),
     .irq(irq),
 
-    // AXI master (no IDs inside)
     .maxi_awaddr (maxi_awaddr),
     .maxi_awlen  (maxi_awlen),
     .maxi_awsize (maxi_awsize),
@@ -129,7 +122,7 @@ module taketwo_wrap (
     .maxi_rvalid (maxi_rvalid),
     .maxi_rready (maxi_rready),
 
-    // AXI-Lite slave (control)
+
     .saxi_awaddr (saxi_awaddr),
     .saxi_awprot (saxi_awprot),
     .saxi_awvalid(saxi_awvalid),
@@ -154,8 +147,5 @@ module taketwo_wrap (
     .saxi_rvalid (saxi_rvalid),
     .saxi_rready (saxi_rready)
   );
-
-  // Incoming IDs from the RAM model are ignored by the core; they just exist for cocotbext.
-  // maxi_bid / maxi_rid are unused here on purpose.
 
 endmodule

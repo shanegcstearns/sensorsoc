@@ -30,43 +30,45 @@ module pwrctrl_mmio #(
     reg [31:0] wake_status;
     reg [31:0] wake_reason;
 
-    // latch wake events whenever they happen
-    always @(posedge clk) begin
-        if (!resetn) begin
-            wake_status <= 32'h0;
-        end else begin
-            wake_status <= wake_status | wake_src_i;
-        end
-    end
-
-    // latch wake reason on transition asleep->awake
     reg cpu_awake_d;
-    always @(posedge clk) begin
-        if (!resetn) begin
-            cpu_awake_d <= 1'b1;
-            wake_reason <= 32'h0;
-        end else begin
-            cpu_awake_d <= cpu_awake_i;
-            if (!cpu_awake_d && cpu_awake_i) begin
-                // woke up: capture the cause snapshot
-                wake_reason <= wake_status | wake_src_i;
-            end
-        end
-    end
 
-    // MMIO read/write
     always @(posedge clk) begin
         if (!resetn) begin
-            mem_ready  <= 1'b0;
-            mem_rdata  <= 32'h0;
+            mem_ready   <= 1'b0;
+            mem_rdata   <= 32'h0;
             sleep_req_o <= 1'b0;
+
+            wake_status <= 32'h0;
+            wake_reason <= 32'h0;
+
+            cpu_awake_d <= 1'b1;
         end else begin
             mem_ready <= 1'b0;
 
+            // ------------------------------------------------------------
+            // 1) Continuously latch wake sources (sticky until W1C clears)
+            // ------------------------------------------------------------
+            wake_status <= wake_status | wake_src_i;
+
+            // ------------------------------------------------------------
+            // 2) Detect asleep->awake transition and snapshot wake reason
+            // ------------------------------------------------------------
+            cpu_awake_d <= cpu_awake_i;
+            if (!cpu_awake_d && cpu_awake_i) begin
+                wake_reason <= wake_status | wake_src_i;
+
+                // IMPORTANT: clear sleep request on wake so we don't
+                // immediately re-sleep in periodic scenarios.
+                sleep_req_o <= 1'b0;
+            end
+
+            // ------------------------------------------------------------
+            // 3) MMIO access
+            // ------------------------------------------------------------
             if (sel) begin
                 mem_ready <= 1'b1;
 
-                // default read data
+                // reads
                 case (off)
                     OFF_CTRL:        mem_rdata <= {31'b0, sleep_req_o};
                     OFF_WAKE_STATUS: mem_rdata <= wake_status;
@@ -81,10 +83,13 @@ module pwrctrl_mmio #(
                             if (mem_wstrb[0])
                                 sleep_req_o <= mem_wdata[0];
                         end
+
                         OFF_WAKE_STATUS: begin
-                            // write-1-to-clear
-                            wake_status <= wake_status & ~mem_wdata;
+                            // W1C: clear bits that are '1' in mem_wdata
+                            // Note: include wake_src_i OR-in (same-cycle) before clear.
+                            wake_status <= (wake_status | wake_src_i) & ~mem_wdata;
                         end
+
                         default: begin end
                     endcase
                 end
