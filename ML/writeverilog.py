@@ -120,7 +120,7 @@ PROJECT    = "taketwo"
 CHUNK_SIZE = 64
 
 # input quantization: x_int = round(x_float * X_SCALE)
-X_SCALE    = 256
+X_SCALE    = 8192 #Q3.13
 
 # RTL simulator: "iverilog" or "verilator"
 SIMTYPE    = os.environ.get("SIM", "verilator")
@@ -140,11 +140,13 @@ def main():
         default_variable_dtype=ng.int16,
         default_constant_dtype=ng.int16,
         default_operator_dtype=ng.int16,
-        default_scale_dtype=ng.int16,
+        default_scale_dtype=ng.int32,
         default_bias_dtype=ng.int32,   # your biases end up int32 in the generated map
         disable_fusion=False,
         verbose=True,
     )
+    
+    print(operators)
 
     out_nodes = list(outputs.values())
     if len(out_nodes) != 1:

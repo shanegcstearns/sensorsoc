@@ -110,8 +110,9 @@ for sid, g in df.groupby("subject_id", sort=False):
 
 
 
-# combining hrv and movement
-df["hrv_mov"] = df["hr_rmssd"] / (df["movement"] + EPS)
+# # combining hrv and movement
+# df["hrv_mov"] = df["hr_rmssd"] / (df["movement"] + EPS)
+
 
 
 features = [
@@ -121,6 +122,17 @@ features = [
     "hr_rmssd"    # hrv
     #"hrv_mov"      # hrv and movement
 ]
+
+# normalize features (except cosine, which is already bounded)
+df["movement"] /= 8.0
+df["delta_hr"] /= 4.0
+df["hr_rmssd"] /= 0.05
+# cosine already bounded
+
+
+# clamp features to [-1, 1] to avoid outliers dominating training and to match quantization range
+for col in features:
+    df[col] = df[col].clip(-1.0, 1.0)
 
 X = df[features].fillna(0).to_numpy()
 y = df["label"].to_numpy()
@@ -207,7 +219,7 @@ class TransitionMLP(nn.Module):
 
 model = TransitionMLP(X_train.shape[1])
 
-opt = torch.optim.Adam(model.parameters(), lr=LR)
+opt = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=1e-4)
 
 loss_fn = nn.CrossEntropyLoss()
 
@@ -270,6 +282,10 @@ model.eval()
 export_model = ExportWrapper(model).eval()
 
 dummy_input = torch.tensor(X_train[:1], dtype=torch.float32)  # shape (1, in_dim)
+
+for name, param in model.named_parameters(): #checking parameter ranges before export
+    print(name, param.abs().max().item())
+
 
 onnx_path = "taketwo_nngen.onnx"
 torch.onnx.export(
