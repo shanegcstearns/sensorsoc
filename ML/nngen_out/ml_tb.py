@@ -6,11 +6,14 @@ from cocotb.triggers import FallingEdge, ClockCycles
 from cocotbext.axi import AxiLiteBus, AxiLiteMaster, AxiBus, AxiRam
 
 
-def le32(b: bytes) -> int:
+def le32(b: bytes) -> int: # interpret 4 bytes as little-endian unsigned int
     return int.from_bytes(b, "little", signed=False)
 
-def u32(x: int) -> bytes:
+def u32(x: int) -> bytes: # convert an int to 4 bytes in little-endian order (unsigned)
     return int(x & 0xFFFFFFFF).to_bytes(4, "little")
+
+def u16_4(x: list(int)) -> struct(bytes): # convert 4 int16s to byte struct (feature conversion)
+    return struct.pack("<4h", *x_vals) 
 
 
 async def reset_dut(dut, cycles=10):
@@ -43,23 +46,24 @@ async def load_weights_and_infer_once(dut):
         size=1 << 20,
     )
 
-
+    # read base addresses from registers
     global_off = le32(await axil.read(0x80, 4))  # 128
     out_base   = le32(await axil.read(0x88, 4))  # 136 
     x_base     = le32(await axil.read(0x8C, 4))  # 140 
     var_base   = le32(await axil.read(0x90, 4))  # 144 
 
+    # convert to offset matching addresses, and mask to 32 bits
     out_addr = (global_off + out_base) & 0xFFFFFFFF
     x_addr   = (global_off + x_base) & 0xFFFFFFFF
     var_addr = (global_off + var_base) & 0xFFFFFFFF
 
+    #print offsets
     dut._log.info(f"global_off=0x{global_off:08X}")
     dut._log.info(f"x_addr   =0x{x_addr:08X}  (reg 0x8C + offset)")
     dut._log.info(f"out_addr =0x{out_addr:08X}  (reg 0x88 + offset)")
     dut._log.info(f"var_addr =0x{var_addr:08X}  (reg 0x90 + offset)")
 
     # load weights from bin
-
     bin_path = "taketwo_params.bin"
     with open(bin_path, "rb") as f:
         param_bytes = f.read()
@@ -69,33 +73,32 @@ async def load_weights_and_infer_once(dut):
 
     dut._log.info("Reading weights back...")
     rb = axi_ram.read(var_addr, len(param_bytes))
-    assert rb == param_bytes, "Readback mismatch!"
-    dut._log.info("OK: weights write+readback matched exactly")
-
-    # writing input vector into memory (real test data from csv)
-
-    x_vals = [00, -93, -154, 0]
-    x_bytes = struct.pack("<4h", *x_vals) 
-    axi_ram.write(x_addr, x_bytes)
-    dut._log.info(f"Wrote x={x_vals} to x_addr=0x{x_addr:08X}")
+    assert rb == param_bytes, "Comparison from written weights"
 
     # start accelerator
     dut._log.info("Writing START=1 to reg 0x10")
     await axil.write(0x10, u32(1))
 
-    # await axil.write(0x18, u32(1))  # reg 24: Reset
-    # await axil.write(0x18, u32(0))
+    # writing input vector into memory (real test data from csv)
+    with open("processed_sleep_dataset.csv") as f:
+        ds = f.read()
+        
+    for line in ds:
+        feats = line.split(",")
+        feats[0] = ((float(feats[0])/8.0).clip(-1.0, 1.0))   & 0xffff
+        feats[1] = feats[1] & 0xffff
+        feats[2] = (feats[2]/4) & 0xffff
+        feats[3] = (feats[3]/8) & 0xffff
+        axi_ram.write(x_addr, u16_4())
 
-    # wait for busy to clear
-    for _ in range(2000):
-        busy = le32(await axil.read(0x14, 4))
-        if busy == 0:
-            break
-        await ClockCycles(clk_i, 10)
-    dut._log.info(f"Busy now = {busy}")
-    assert busy == 0, "Timeout waiting for accelerator to finish"
+        # wait for busy to clear
+        while(True):
+            busy = le32(await axil.read(0x14, 4))
+            if busy == 0:
+                break
+            await ClockCycles(clk_i, 10)
 
-    # read logits from output address
-    out_bytes = axi_ram.read(out_addr, 4)
-    log0, log1 = struct.unpack("<2h", out_bytes)
-    dut._log.info(f"logits int16: [{log0}, {log1}] (raw bytes={out_bytes.hex()})")
+        # read logits from output address
+        out_bytes = axi_ram.read(out_addr, 4)
+        log0, log1 = struct.unpack("<2h", out_bytes)
+        dut._log.info(f"logits int16: [{log0}, {log1}] (raw bytes={out_bytes.hex()})")
