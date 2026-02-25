@@ -1,11 +1,28 @@
+"""
+ppg.py
+
+This module simulates a heart-rate (PPG-derived) sensor interface
+using the PhysioNet heart rate dataset.
+
+Functionality:
+- Loads multi-file heart rate data from directory
+- Applies sensor-level modeling (gain error, offset, noise)
+- Normalizes typical 40–180 BPM range
+- Simulates 12-bit ADC quantization
+- Saves validation plot (analog vs digital comparison)
+- Outputs digital heart-rate stream (simulated I2C data)
+
+This represents:
+Optical PPG sensor → Signal conditioning → ADC → Digital HR output
+"""
+
 import numpy as np
 import os
 import matplotlib.pyplot as plt
 
 
-# -----------------------------
+
 # Configuration
-# -----------------------------
 
 PPG_FS = 1            # PhysioNet heart rate ~1 Hz
 ADC_BITS = 12
@@ -14,9 +31,9 @@ OUTPUT_DIR = "sensor_output"
 MAX_SAMPLES = 500000
 
 
-# -----------------------------
+
 # Data Loading
-# -----------------------------
+
 
 def load_heartrate_directory(directory):
     print("Loading heart rate directory...")
@@ -43,9 +60,9 @@ def load_heartrate_directory(directory):
 
 
 
-# -----------------------------
+
 # Sensor Model
-# -----------------------------
+
 
 def apply_ppg_sensor_model(hr):
     # Normalize BPM (40–180 typical range)
@@ -78,9 +95,9 @@ def adc_quantize(signal):
     return digital.astype(np.int16)
 
 
-# -----------------------------
+
 # Validation Plot
-# -----------------------------
+
 
 def save_validation_plot(raw, digital, fs, filename):
     duration = 60  # seconds (HR is slow)
@@ -109,9 +126,9 @@ def save_validation_plot(raw, digital, fs, filename):
     print("Validation plot saved to:", path)
 
 
-# -----------------------------
+
 # Main
-# -----------------------------
+
 
 def process_ppg(directory):
     raw = load_heartrate_directory(directory)
@@ -125,5 +142,17 @@ def process_ppg(directory):
         PPG_FS,
         "ppg_validation.png"
     )
+
+    # Save digital HR stream for ML use
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    csv_path = os.path.join(OUTPUT_DIR, "ppg_digital_stream.csv")
+
+    np.savetxt(
+        "sensor_output/ppg_digital.csv",
+        digital,
+        delimiter=","
+    )
+
+    print("PPG digital stream saved to:", csv_path)
 
     return digital

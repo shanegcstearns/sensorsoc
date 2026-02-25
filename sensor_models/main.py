@@ -1,3 +1,18 @@
+"""
+main.py
+
+System-level integration of wearable sensor interface model.
+
+Functionality:
+- Processes accelerometer and PPG sensor modules
+- Generates digital sensor streams
+- Computes I2C bandwidth requirements
+- Verifies that combined sensor load fits within 100 kbps I2C limit
+
+This represents:
+Sensors → I2C bus → SoC interface validation
+"""
+
 from sensors.accelerometer import process_accelerometer
 from sensors.ppg import process_ppg
 

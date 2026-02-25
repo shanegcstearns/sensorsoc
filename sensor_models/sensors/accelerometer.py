@@ -1,11 +1,26 @@
+"""
+accelerometer.py
+
+This module simulates a 3-axis accelerometer sensor interface using
+the PhysioNet motion dataset.
+
+Functionality:
+- Loads multi-file accelerometer data from directory
+- Applies sensor-level modeling (gain error, offset, Gaussian noise)
+- Normalizes to ±4g range
+- Simulates 12-bit ADC quantization
+- Saves validation plot (analog vs digital comparison)
+- Outputs digital acceleration stream (simulated I2C data)
+
+This represents:
+Physical sensor → Analog front end → ADC → Digital output
+"""
 import numpy as np
 import os
 import matplotlib.pyplot as plt
 
 
-# -----------------------------
 # Configuration
-# -----------------------------
 
 ACCEL_FS = 50            # Hz
 ACCEL_RANGE_G = 4        # ±4g
@@ -16,9 +31,7 @@ OUTPUT_DIR = "sensor_output"
 MAX_SAMPLES = 500000
 
 
-# -----------------------------
 # Data Loading
-# -----------------------------
 
 def load_motion_directory(directory):
     print("Loading motion directory...")
@@ -43,9 +56,7 @@ def load_motion_directory(directory):
     return data
 
 
-# -----------------------------
 # Sensor Model
-# -----------------------------
 
 def apply_accel_sensor_model(accel):
     # Gain error
@@ -74,9 +85,7 @@ def adc_quantize(signal):
     return digital.astype(np.int16)
 
 
-# -----------------------------
 # Validation Plot
-# -----------------------------
 
 def save_validation_plot(raw, digital, fs, filename):
     duration = 10  # seconds
@@ -107,9 +116,7 @@ def save_validation_plot(raw, digital, fs, filename):
     print("Validation plot saved to:", path)
 
 
-# -----------------------------
 # Main Processing
-# -----------------------------
 
 def process_accelerometer(directory):
     raw = load_motion_directory(directory)
@@ -124,5 +131,17 @@ def process_accelerometer(directory):
         ACCEL_FS,
         "accel_validation.png"
     )
+
+    # Save full digital stream for ML use
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    csv_path = os.path.join(OUTPUT_DIR, "accelerometer_digital_stream.csv")
+
+    np.savetxt(
+        "sensor_output/accel_digital.csv",
+        digital,
+        delimiter=","
+    )
+
+    print("Accelerometer digital stream saved to:", csv_path)
 
     return digital
