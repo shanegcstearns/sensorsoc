@@ -12,3 +12,9 @@ sim/build/
 *.elf
 *.bin
 *.hex
+
+sleep_soc/sim_out
+sleep_soc/stBTi6uk
+sensor_models/sensors/__pycache__/
+**/__pycache__/
+*.pyc
