@@ -39,7 +39,7 @@ GAIN_ERROR      = 0.02       # ±2% gain error (typ spec)
 OFFSET_G        = 0.040      # up to 40 mg zero-g offset (typ spec)
 
 OUTPUT_DIR      = "sensor_output"
-MAX_SAMPLES     = 500_000
+MAX_SAMPLES     = 10_000
 
 # Downsample ratio: PhysioNet is 50 Hz, sensor ODR is 25 Hz
 DS_RATIO        = 2
@@ -57,7 +57,7 @@ def load_motion_directory(directory):
             data = np.loadtxt(path)          # cols: time, x, y, z
             all_data.append(data[:, 1:4])    # keep x,y,z only
     data = np.vstack(all_data)
-    
+
     if MAX_SAMPLES is not None:
         data = data[:MAX_SAMPLES]
     # Downsample 50 Hz → 25 Hz

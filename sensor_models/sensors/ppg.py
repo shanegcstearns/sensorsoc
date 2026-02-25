@@ -46,7 +46,7 @@ OFFSET_COUNTS   = 30         # fixed offset in counts
 NOISE_STD       = 8          # ~8 counts RMS noise (reasonable for 14-bit optical ADC)
 
 OUTPUT_DIR      = "sensor_output"
-MAX_SAMPLES     = 500_000
+MAX_SAMPLES     = 10_000
 
 
 # Data loading
