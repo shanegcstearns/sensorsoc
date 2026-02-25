@@ -1,158 +1,193 @@
 """
 ppg.py
 
-This module simulates a heart-rate (PPG-derived) sensor interface
-using the PhysioNet heart rate dataset.
+Models the Analog Devices ADPD144RI optical PPG sensor.
 
-Functionality:
-- Loads multi-file heart rate data from directory
-- Applies sensor-level modeling (gain error, offset, noise)
-- Normalizes typical 40–180 BPM range
-- Simulates 12-bit ADC quantization
-- Saves validation plot (analog vs digital comparison)
-- Outputs digital heart-rate stream (simulated I2C data)
+Real sensor specs:
+- 14-bit ADC (single pulse); up to 27-bit with burst accumulation
+- Two channels: Time Slot A (660 nm red), Time Slot B (880 nm IR)
+- ODR: configurable; we use 100 Hz (typical for PPG heart rate)
+- Outputs raw optical intensity counts, NOT BPM
+- I2C interface, 1.8 V
+- FIFO with overflow/count status register
 
-This represents:
-Optical PPG sensor → Signal conditioning → ADC → Digital HR output
+PhysioNet dataset (heart_rate):
+- Columns: timestamp, bpm  (sampled ~1 Hz)
+- We upsample to 100 Hz and synthesize a realistic PPG waveform from BPM,
+  because the raw dataset has HR labels not raw optical data.
+
+Pipeline:
+  BPM labels (1 Hz)
+    → upsample + interpolate to 100 Hz
+    → synthesize PPG optical waveform (AC + DC components, red + IR)
+    → apply gain error, offset, noise
+    → 14-bit ADC quantization (unsigned 0..16383)
+    → save as CSV: two columns (red_counts, ir_counts)
 """
 
 import numpy as np
 import os
 import matplotlib.pyplot as plt
+from scipy.interpolate import interp1d
+
+# ADPD144RI config
+PPG_ODR_HZ      = 100        # output data rate in Hz
+ADC_BITS        = 14         # 14-bit unsigned counts
+ADC_MAX         = (1 << ADC_BITS) - 1   # 16383
+
+# Typical optical signal levels (arbitrary units scaled to 14-bit range)
+DC_LEVEL_RED    = 12000      # red channel DC (ambient + LED reflected)
+DC_LEVEL_IR     = 14000      # IR channel DC (higher because IR LED is stronger)
+AC_AMPLITUDE    = 400        # pulsatile AC component (about 3% modulation — realistic)
+
+# Sensor imperfection model
+GAIN_ERROR      = 0.01       # ±1% gain error
+OFFSET_COUNTS   = 30         # fixed offset in counts
+NOISE_STD       = 8          # ~8 counts RMS noise (reasonable for 14-bit optical ADC)
+
+OUTPUT_DIR      = "sensor_output"
+MAX_SAMPLES     = 500_000
 
 
-
-# Configuration
-
-PPG_FS = 1            # PhysioNet heart rate ~1 Hz
-ADC_BITS = 12
-OUTPUT_DIR = "sensor_output"
-
-MAX_SAMPLES = 500000
-
-
-
-# Data Loading
-
+# Data loading
 
 def load_heartrate_directory(directory):
     print("Loading heart rate directory...")
-    all_data = []
-
-    for file in os.listdir(directory):
-        if file.endswith(".txt"):
-            path = os.path.join(directory, file)
-            print("Loading", file)
-
-            # Heart rate files are comma-separated
-            data = np.loadtxt(path, delimiter=",")
-
-            # columns: time, bpm
-            all_data.append(data[:, 1])
-
-    data = np.concatenate(all_data)
-
+    all_bpm = []
+    all_t   = []
+    t_offset = 0.0
+    for fname in sorted(os.listdir(directory)):
+        if fname.endswith(".txt"):
+            path = os.path.join(directory, fname)
+            print("  Loading", fname)
+            data = np.loadtxt(path, delimiter=",")   # cols: time, bpm
+            t   = data[:, 0] + t_offset
+            bpm = data[:, 1]
+            all_t.append(t)
+            all_bpm.append(bpm)
+            t_offset = t[-1] + 1.0   # small gap between subjects
+    t_all   = np.concatenate(all_t)
+    bpm_all = np.concatenate(all_bpm)
     if MAX_SAMPLES is not None:
-        data = data[:MAX_SAMPLES]
-
-    print("Total HR samples loaded:", len(data))
-    return data
-
-
+        t_all   = t_all[:MAX_SAMPLES]
+        bpm_all = bpm_all[:MAX_SAMPLES]
+    print(f"  HR samples loaded: {len(bpm_all)}")
+    return t_all, bpm_all
 
 
-# Sensor Model
+# PPG waveform synthesis
+
+def synthesize_ppg_from_bpm(t_bpm, bpm, odr=PPG_ODR_HZ):
+    """
+    Upsample 1 Hz BPM labels to `odr` Hz and synthesize a realistic
+    PPG optical waveform.
+
+    A real PPG waveform has:
+      - A large DC component (reflected LED light)
+      - A small AC pulsatile component at the heart rate frequency
+      - Slight harmonic content (we add 2nd harmonic at 30% amplitude)
+    """
+    # Build high-rate time axis
+    t_end    = t_bpm[-1]
+    t_hr     = np.arange(0, t_end, 1.0 / odr)
+
+    # Interpolate BPM to high rate
+    interp   = interp1d(t_bpm, bpm, kind="linear", fill_value="extrapolate")
+    bpm_hr   = np.clip(interp(t_hr), 30, 220)   # clamp to physiological range
+
+    # Instantaneous phase via cumulative integration of frequency
+    freq_hz  = bpm_hr / 60.0                     # BPM → Hz
+    phase    = 2 * np.pi * np.cumsum(freq_hz) / odr
+
+    # Fundamental + 2nd harmonic (realistic PPG shape)
+    ppg_wave = np.sin(phase) + 0.3 * np.sin(2 * phase)
+    ppg_wave /= np.max(np.abs(ppg_wave))          # normalise to ±1
+
+    return t_hr, ppg_wave, bpm_hr
 
 
-def apply_ppg_sensor_model(hr):
-    # Normalize BPM (40–180 typical range)
-    hr_norm = (hr - 40) / (180 - 40)
-    hr_norm = np.clip(hr_norm, 0, 1)
+# ADPD144RI sensor model
 
-    # Gain error
-    gain = 1 + np.random.uniform(-0.02, 0.02)
-    hr_norm *= gain
+def apply_adpd144ri_model(ppg_wave):
+    """
+    Produce two channels (red 660 nm, IR 880 nm) of 14-bit unsigned counts.
 
-    # Offset
-    hr_norm += 0.01
+    Red channel:  lower DC level, same AC pulsatile
+    IR channel:   higher DC level, AC pulsatile slightly different amplitude
+                  (SpO2 ratio of AC/DC differs between wavelengths)
+    """
+    # Red channel
+    gain_r   = 1.0 + np.random.uniform(-GAIN_ERROR, GAIN_ERROR)
+    offset_r = OFFSET_COUNTS + np.random.uniform(-5, 5)
+    noise_r  = np.random.normal(0, NOISE_STD, len(ppg_wave))
 
-    # Noise
-    hr_norm += np.random.normal(0, 0.005, len(hr_norm))
+    red = DC_LEVEL_RED + AC_AMPLITUDE * ppg_wave * gain_r + offset_r + noise_r
 
-    # Map to ±1 for ADC
-    hr_norm = hr_norm * 2 - 1
+    # IR channel (slightly different gain and AC amplitude — simulates SpO2 ratio)
+    gain_ir   = 1.0 + np.random.uniform(-GAIN_ERROR, GAIN_ERROR)
+    offset_ir = OFFSET_COUNTS + np.random.uniform(-5, 5)
+    noise_ir  = np.random.normal(0, NOISE_STD, len(ppg_wave))
+    ac_ir     = AC_AMPLITUDE * 0.85   # IR AC slightly smaller (typical R~0.85 at SpO2 ~98%)
 
-    return hr_norm
+    ir = DC_LEVEL_IR + ac_ir * ppg_wave * gain_ir + offset_ir + noise_ir
 
+    # Clip and quantize to 14-bit unsigned
+    red_counts = np.clip(np.round(red), 0, ADC_MAX).astype(np.uint16)
+    ir_counts  = np.clip(np.round(ir),  0, ADC_MAX).astype(np.uint16)
 
-def adc_quantize(signal):
-    levels = 2 ** ADC_BITS
-    signal = np.clip(signal, -1, 1)
-
-    digital = np.round((signal + 1) / 2 * (levels - 1))
-    digital = digital - levels // 2
-
-    return digital.astype(np.int16)
-
-
-
-# Validation Plot
+    return red_counts, ir_counts
 
 
-def save_validation_plot(raw, digital, fs, filename):
-    duration = 60  # seconds (HR is slow)
-    n = duration * fs
+# Validation plot
 
-    raw = raw[:n]
-    digital = digital[:n]
+def save_validation_plot(t_hr, red, ir, bpm_hr, filename):
+    duration_s = 5
+    n = duration_s * PPG_ODR_HZ
+    t  = t_hr[:n]
+    r  = red[:n]
+    i  = ir[:n]
 
-    digital_norm = digital / np.max(np.abs(digital)) * np.max(np.abs(raw))
-    time = np.arange(len(raw)) / fs
+    fig, axes = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
 
-    plt.figure(figsize=(10,4))
-    plt.plot(time, raw, label="Analog HR")
-    plt.plot(time, digital_norm, label="ADC (normalized)", alpha=0.7)
-    plt.xlabel("Time (s)")
-    plt.ylabel("Heart Rate (BPM)")
-    plt.title("PPG Validation (First 60s)")
-    plt.legend()
+    axes[0].plot(t, r, color="red",  label="Red 660nm (counts)")
+    axes[0].set_ylabel("ADC counts")
+    axes[0].legend()
+
+    axes[1].plot(t, i, color="darkred", label="IR 880nm (counts)")
+    axes[1].set_ylabel("ADC counts")
+    axes[1].legend()
+
+    axes[2].plot(t, bpm_hr[:n], color="blue", label="Heart rate (BPM)")
+    axes[2].set_ylabel("BPM")
+    axes[2].set_xlabel("Time (s)")
+    axes[2].legend()
+
+    fig.suptitle("ADPD144RI Model — Red + IR channels (first 5 s)")
     plt.tight_layout()
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     path = os.path.join(OUTPUT_DIR, filename)
     plt.savefig(path)
     plt.close()
-
-    print("Validation plot saved to:", path)
-
+    print("  Validation plot →", path)
 
 
 # Main
 
 
 def process_ppg(directory):
-    raw = load_heartrate_directory(directory)
+    t_bpm, bpm      = load_heartrate_directory(directory)
+    t_hr, ppg_wave, bpm_hr = synthesize_ppg_from_bpm(t_bpm, bpm)
+    red, ir          = apply_adpd144ri_model(ppg_wave)
 
-    analog = apply_ppg_sensor_model(raw)
-    digital = adc_quantize(analog)
+    save_validation_plot(t_hr, red, ir, bpm_hr, "ppg_validation.png")
 
-    save_validation_plot(
-        raw,
-        digital,
-        PPG_FS,
-        "ppg_validation.png"
-    )
 
-    # Save digital HR stream for ML use
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    csv_path = os.path.join(OUTPUT_DIR, "ppg_digital_stream.csv")
+    csv_path = os.path.join(OUTPUT_DIR, "ppg_digital.csv")
+    # Two columns: red_counts, ir_counts — no header (for $fscanf compatibility)
+    data = np.column_stack([red, ir])
+    np.savetxt(csv_path, data, fmt="%d", delimiter=",")
+    print(f"  PPG digital stream → {csv_path}  ({len(red)} samples @ {PPG_ODR_HZ} Hz)")
 
-    np.savetxt(
-        "sensor_output/ppg_digital.csv",
-        digital,
-        delimiter=","
-    )
-
-    print("PPG digital stream saved to:", csv_path)
-
-    return digital
+    return red, ir
