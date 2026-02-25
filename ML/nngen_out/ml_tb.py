@@ -6,14 +6,16 @@ from cocotb.triggers import FallingEdge, ClockCycles
 from cocotbext.axi import AxiLiteBus, AxiLiteMaster, AxiBus, AxiRam
 
 
+SCALE = 8192
+
 def le32(b: bytes) -> int: # interpret 4 bytes as little-endian unsigned int
     return int.from_bytes(b, "little", signed=False)
 
 def u32(x: int) -> bytes: # convert an int to 4 bytes in little-endian order (unsigned)
     return int(x & 0xFFFFFFFF).to_bytes(4, "little")
 
-def u16_4(x: list(int)) -> struct(bytes): # convert 4 int16s to byte struct (feature conversion)
-    return struct.pack("<4h", *x_vals) 
+def u16_4(x: list[int]) -> bytes: # convert 4 int16s to byte struct (feature conversion)
+    return struct.pack("<4h", *x) 
 
 
 async def reset_dut(dut, cycles=10):
@@ -76,21 +78,23 @@ async def load_weights_and_infer_once(dut):
     assert rb == param_bytes, "Comparison from written weights"
 
     # start accelerator
-    dut._log.info("Writing START=1 to reg 0x10")
-    await axil.write(0x10, u32(1))
+    #dut._log.info("Writing START=1 to reg 0x10")
+    #await axil.write(0x10, u32(1))
 
     # writing input vector into memory (real test data from csv)
     with open("processed_sleep_dataset.csv") as f:
-        ds = f.read()
-        
+        ds = f.readlines()
+    
     for line in ds:
+        print(line)
         feats = line.split(",")
-        feats[0] = ((float(feats[0])/8.0).clip(-1.0, 1.0))   & 0xffff
-        feats[1] = feats[1] & 0xffff
-        feats[2] = (feats[2]/4) & 0xffff
-        feats[3] = (feats[3]/8) & 0xffff
-        axi_ram.write(x_addr, u16_4())
-
+        print(feats)
+        await axil.write(0x10, u32(1))
+        feats[0] = max(-32768, min(int((float(feats[0])/8.0) * SCALE), 32767))    #movement
+        feats[1] = max(-32768, min(int((float(feats[1])) * SCALE), 32767))        #cosine
+        feats[2] = max(-32768, min(int((float(feats[2])/4.0) * SCALE), 32767))    #delta hr
+        feats[3] = max(-32768, min(int((float(feats[0])*20.0) * SCALE), 32767))   #rmssd
+        axi_ram.write(x_addr, u16_4(feats))
         # wait for busy to clear
         while(True):
             busy = le32(await axil.read(0x14, 4))
