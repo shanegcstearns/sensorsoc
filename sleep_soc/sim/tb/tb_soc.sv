@@ -37,6 +37,35 @@ module tb_soc;
     resetn = 1;
   end
 
+  // --------------------------------------------------
+  // Sensor file players
+  // --------------------------------------------------
+
+  logic        accel_valid, accel_ok;
+  logic signed [13:0] ax, ay, az;
+
+  accel_file_player accel_src (
+      .clk(clk),
+      .resetn(resetn),
+      .sample_valid(accel_valid),
+      .sample_ok(accel_ok),
+      .ax(ax),
+      .ay(ay),
+      .az(az)
+  );
+
+  logic        ppg_valid;
+  logic [13:0] ppg_red;
+  logic [13:0] ppg_ir;
+
+  ppg_file_player ppg_src (
+      .clk(clk),
+      .resetn(resetn),
+      .sample_valid(ppg_valid),
+      .red_counts(ppg_red),
+      .ir_counts(ppg_ir)
+  );
+
   // ------------------------------------------------------------
   // TAP internal DUT signals into TB wires (Icarus-safe pattern)
   // ------------------------------------------------------------
