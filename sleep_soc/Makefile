@@ -258,6 +258,24 @@ sim-ppg-fifo-reader: $(PPG_FIFO_READER_VVP)
 	@cd $(WAVE_DIR) && $(VVP) $(abspath $(PPG_FIFO_READER_VVP))
 
 # ============================================================
+# PPG BEAT DETECT + RR CALC
+# ============================================================
+
+PPG_BEAT_RR_TOP     := ppg_beat_detect_rr_calc_tb
+PPG_BEAT_RR_VVP     := $(BUILD_DIR)/$(PPG_BEAT_RR_TOP).vvp
+PPG_BEAT_RR_SOURCES := sim/tb/ppg_beat_detect_rr_calc_tb.sv rtl/sensor_processing/ppg_beat_detect_rr_calc.sv
+PPG_BEAT_RR_VCD     := $(WAVE_DIR)/ppg_beat_detect_rr_calc_tb.vcd
+
+$(PPG_BEAT_RR_VVP): $(PPG_BEAT_RR_SOURCES)
+	$(IVERILOG) -g2012 -o $@ $^
+
+.PHONY: sim-ppg-beat-rr
+sim-ppg-beat-rr: $(PPG_BEAT_RR_VVP)
+	@echo "== Running $(PPG_BEAT_RR_TOP) (VCD -> $(PPG_BEAT_RR_VCD)) =="
+	@mkdir -p $(WAVE_DIR)
+	@cd $(WAVE_DIR) && $(VVP) $(abspath $(PPG_BEAT_RR_VVP))
+
+# ============================================================
 # Cleanup
 # ============================================================
 
