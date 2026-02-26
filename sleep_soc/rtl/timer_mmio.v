@@ -117,7 +117,6 @@ module timer_mmio #(
                             // W1C bit0
                             if (mem_wdata[0]) event_latched <= 1'b0;
                         end
-
                         default: begin end
                     endcase
                 end
