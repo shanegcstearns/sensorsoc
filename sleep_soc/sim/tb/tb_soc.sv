@@ -4,14 +4,11 @@ module tb_soc;
 
   localparam string FW = "firmware/build/firmware.hex";
 
-<<<<<<< HEAD
   // Optional: page constants for runtime filtering (NOT hierarchical)
   localparam logic [31:12] TIMER_PAGE = 20'h03002;
   localparam logic [31:12] PWR_PAGE   = 20'h03001;
   localparam logic [31:12] TEST_PAGE  = 20'h0300F;
 
-=======
->>>>>>> e6977a12a8c62aa40b661d9f693abea2a9057d91
   logic clk = 0;
   logic resetn = 0;
 
@@ -40,7 +37,6 @@ module tb_soc;
     resetn = 1;
   end
 
-<<<<<<< HEAD
   // --------------------------------------------------
   // Sensor file players
   // --------------------------------------------------
@@ -85,44 +81,26 @@ module tb_soc;
   wire [31:0] tap_test_status = dut.test_status;
   wire [31:0] tap_test_code   = dut.test_code;
 
-=======
->>>>>>> e6977a12a8c62aa40b661d9f693abea2a9057d91
   // ----------------------------
   // Sleep/Wake observation flags
   // ----------------------------
   bit saw_sleep = 0;
   bit saw_wake  = 0;
 
-<<<<<<< HEAD
-=======
-  // Track cpu_awake_o transitions
->>>>>>> e6977a12a8c62aa40b661d9f693abea2a9057d91
   initial begin
     wait(resetn == 1);
     forever begin
       @(posedge clk);
 
-<<<<<<< HEAD
       if (!cpu_awake_o)
         saw_sleep = 1;
 
-=======
-      // sleep seen when cpu_awake_o goes low at least once
-      if (!cpu_awake_o)
-        saw_sleep = 1;
-
-      // wake seen when it returns high after sleep
->>>>>>> e6977a12a8c62aa40b661d9f693abea2a9057d91
       if (saw_sleep && cpu_awake_o)
         saw_wake = 1;
     end
   end
 
-<<<<<<< HEAD
   // timeout watchdog
-=======
-  // timeout watchdog (adjust as needed)
->>>>>>> e6977a12a8c62aa40b661d9f693abea2a9057d91
   longint unsigned cycles;
   initial begin
     cycles = 0;
@@ -134,23 +112,14 @@ module tb_soc;
     $fatal(1, "TIMEOUT: test did not finish");
   end
 
-<<<<<<< HEAD
   // PASS/FAIL monitor
-=======
-  // PASS/FAIL monitor (requires test_mmio block in DUT)
->>>>>>> e6977a12a8c62aa40b661d9f693abea2a9057d91
   initial begin
     wait(resetn == 1);
 
     forever begin
       @(posedge clk);
 
-<<<<<<< HEAD
       if (tap_test_status == 32'hCAFE_BABE) begin
-=======
-      if (dut.test_status == 32'hCAFE_BABE) begin
-        // Require real sleep/wake if this is your sleep-wake firmware test
->>>>>>> e6977a12a8c62aa40b661d9f693abea2a9057d91
         if (!saw_sleep || !saw_wake) begin
           $display("FAIL: Firmware reported PASS but did not observe cpu_awake_o 1->0->1");
           $display("  saw_sleep=%0d saw_wake=%0d", saw_sleep, saw_wake);
@@ -161,13 +130,8 @@ module tb_soc;
         $finish;
       end
 
-<<<<<<< HEAD
       if (tap_test_status == 32'hDEAD_BEEF) begin
         $display("FAIL, code=0x%08x", tap_test_code);
-=======
-      if (dut.test_status == 32'hDEAD_BEEF) begin
-        $display("FAIL, code=0x%08x", dut.test_code);
->>>>>>> e6977a12a8c62aa40b661d9f693abea2a9057d91
         $fatal(1, "Firmware reported FAIL");
       end
     end
@@ -179,7 +143,6 @@ module tb_soc;
     $dumpvars(0, tb_soc);
   end
 
-<<<<<<< HEAD
   // Trap monitor
   initial begin
     wait(resetn == 1);
@@ -226,39 +189,3 @@ module tb_soc;
   end
 
 endmodule
-=======
-
-
-  initial begin
-  wait(resetn == 1);
-  forever begin
-    @(posedge clk);
-    if (dut.trap) begin
-      $display("TRAP asserted at time %0t", $time);
-      $fatal(1, "CPU trapped (likely bad code / bad link address / illegal instruction)");
-    end
-  end
-end
-
-
-initial begin
-  wait(resetn == 1);
-  forever begin
-    @(posedge clk);
-    if (dut.mmio_sel && dut.mem_valid && (dut.mem_wstrb != 0)) begin
-      $display("MMIO WRITE addr=%08x data=%08x wstrb=%b time=%0t",
-               dut.mem_addr, dut.mem_wdata, dut.mem_wstrb, $time);
-    end
-  end
-end
-
-
-
-
-
-
-
-
-
-endmodule
->>>>>>> e6977a12a8c62aa40b661d9f693abea2a9057d91

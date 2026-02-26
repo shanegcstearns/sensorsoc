@@ -30,7 +30,6 @@ module pwrctrl_mmio #(
     reg [31:0] wake_status;
     reg [31:0] wake_reason;
 
-<<<<<<< HEAD
     reg cpu_awake_d;
 
     always @(posedge clk) begin
@@ -70,45 +69,6 @@ module pwrctrl_mmio #(
                 mem_ready <= 1'b1;
 
                 // reads
-=======
-    // latch wake events whenever they happen
-    always @(posedge clk) begin
-        if (!resetn) begin
-            wake_status <= 32'h0;
-        end else begin
-            wake_status <= wake_status | wake_src_i;
-        end
-    end
-
-    // latch wake reason on transition asleep->awake
-    reg cpu_awake_d;
-    always @(posedge clk) begin
-        if (!resetn) begin
-            cpu_awake_d <= 1'b1;
-            wake_reason <= 32'h0;
-        end else begin
-            cpu_awake_d <= cpu_awake_i;
-            if (!cpu_awake_d && cpu_awake_i) begin
-                // woke up: capture the cause snapshot
-                wake_reason <= wake_status | wake_src_i;
-            end
-        end
-    end
-
-    // MMIO read/write
-    always @(posedge clk) begin
-        if (!resetn) begin
-            mem_ready  <= 1'b0;
-            mem_rdata  <= 32'h0;
-            sleep_req_o <= 1'b0;
-        end else begin
-            mem_ready <= 1'b0;
-
-            if (sel) begin
-                mem_ready <= 1'b1;
-
-                // default read data
->>>>>>> e6977a12a8c62aa40b661d9f693abea2a9057d91
                 case (off)
                     OFF_CTRL:        mem_rdata <= {31'b0, sleep_req_o};
                     OFF_WAKE_STATUS: mem_rdata <= wake_status;
@@ -123,7 +83,6 @@ module pwrctrl_mmio #(
                             if (mem_wstrb[0])
                                 sleep_req_o <= mem_wdata[0];
                         end
-<<<<<<< HEAD
 
                         OFF_WAKE_STATUS: begin
                             // W1C: clear bits that are '1' in mem_wdata
@@ -131,12 +90,6 @@ module pwrctrl_mmio #(
                             wake_status <= (wake_status | wake_src_i) & ~mem_wdata;
                         end
 
-=======
-                        OFF_WAKE_STATUS: begin
-                            // write-1-to-clear
-                            wake_status <= wake_status & ~mem_wdata;
-                        end
->>>>>>> e6977a12a8c62aa40b661d9f693abea2a9057d91
                         default: begin end
                     endcase
                 end
@@ -144,8 +97,4 @@ module pwrctrl_mmio #(
         end
     end
 
-<<<<<<< HEAD
 endmodule
-=======
-endmodule
->>>>>>> e6977a12a8c62aa40b661d9f693abea2a9057d91
