@@ -1,2 +1,6 @@
 # sensorsoc
-This repository is used to share files relevant to the sensing SoC group for the chip design capstone.
+toplevel - our top level directory including all files needed for an end to end sim
+  * mlp.v
+  * mlp_wrap.v
+  * logit_to_confidence.sv
+  * axi_interface.sv
