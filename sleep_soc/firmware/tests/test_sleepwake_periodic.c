@@ -30,14 +30,16 @@ static inline uint32_t mmio_read32(uint32_t addr) {
 static inline void short_delay(volatile uint32_t n) {
     while (n--) __asm__ volatile ("nop");
 }
+static volatile const uint32_t TEST_PASS_VAL = 0xCAFEBABEu;
+static volatile const uint32_t TEST_FAIL_VAL = 0xDEADBEEFu;
 
 static void pass(void) {
-    mmio_write32(TEST_STATUS, TEST_PASS);
+    mmio_write32(TEST_STATUS, TEST_PASS_VAL);
     while (1) { }
 }
 static void fail(uint32_t code) {
     mmio_write32(TEST_CODE, code);
-    mmio_write32(TEST_STATUS, TEST_FAIL);
+    mmio_write32(TEST_STATUS, TEST_FAIL_VAL);
     while (1) { }
 }
 
@@ -96,5 +98,8 @@ int main(void) {
     mmio_write32(P_WAKE_STATUS, WAKE_TIMER_BIT);
     if (!wait_until_clear(P_WAKE_STATUS, WAKE_TIMER_BIT, 10000u)) fail(0x24);
 
+    mmio_write32(TEST_CODE, 0x11111111u);
+    mmio_write32(TEST_STATUS, TEST_PASS_VAL);
+    while (1) { }
     pass();
 }

@@ -218,7 +218,7 @@ $(TIMER_VVP): $(TIMER_TOP_V) $(TIMER_DUT_V)
 test-timer: $(TIMER_VVP)
 	@echo "== Running test-timer =="
 	COCOTB_TOPLEVEL=$(TIMER_TOP) \
-	COCOTB_TEST_MODULES=$(TIMER_MODULE) \
+	COCOTB_TEST_MODULES=$(TIMER_PYMOD) \
 	$(VVP) -M "$(COCOTB_LIBDIR)" -m libcocotbvpi_icarus $(TIMER_VVP)
 
 # ============================================================
