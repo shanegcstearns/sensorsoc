@@ -34,8 +34,6 @@ module ppg_beat_detect_rr_calc_tb;
   logic [7:0]          cfg_q_slope_w;
   logic [7:0]          cfg_q_refrac_penalty;
   logic [7:0]          cfg_q_min_accept;
-  logic                cfg_hr_baseline_en;
-  logic [3:0]          cfg_hr_baseline_shift;
 
   wire                 beat_pulse;
   wire [T_W-1:0]       beat_time;
@@ -44,8 +42,6 @@ module ppg_beat_detect_rr_calc_tb;
   wire [T_W-1:0]       rr_interval;
   wire [15:0]          hr_bpm;
   wire signed [16:0]   delta_hr_bpm;
-  wire [15:0]          hr_baseline_bpm;
-  wire signed [16:0]   hr_vs_baseline_bpm;
   wire [7:0]           beat_quality;
   wire                 double_beat;
   wire                 missed_beat;
@@ -85,8 +81,6 @@ module ppg_beat_detect_rr_calc_tb;
     .cfg_q_slope_w_i(cfg_q_slope_w),
     .cfg_q_refrac_penalty_i(cfg_q_refrac_penalty),
     .cfg_q_min_accept_i(cfg_q_min_accept),
-    .cfg_hr_baseline_en_i(cfg_hr_baseline_en),
-    .cfg_hr_baseline_shift_i(cfg_hr_baseline_shift),
     .beat_pulse_o(beat_pulse),
     .beat_time_o(beat_time),
     .rr_valid_o(rr_valid),
@@ -94,8 +88,6 @@ module ppg_beat_detect_rr_calc_tb;
     .rr_interval_o(rr_interval),
     .hr_bpm_o(hr_bpm),
     .delta_hr_bpm_o(delta_hr_bpm),
-    .hr_baseline_bpm_o(hr_baseline_bpm),
-    .hr_vs_baseline_bpm_o(hr_vs_baseline_bpm),
     .beat_quality_o(beat_quality),
     .double_beat_o(double_beat),
     .missed_beat_o(missed_beat),
@@ -202,8 +194,6 @@ module ppg_beat_detect_rr_calc_tb;
       cfg_q_slope_w         = 8'd2;
       cfg_q_refrac_penalty  = 8'd8;
       cfg_q_min_accept      = 8'd5;
-      cfg_hr_baseline_en    = 1'b1;
-      cfg_hr_baseline_shift = 4'd1;
     end
   endtask
 
@@ -320,33 +310,6 @@ module ppg_beat_detect_rr_calc_tb;
     idle_cycles(20);
     if (rr_count < 3) $fatal(1, "delta-hr: missing third rr");
     if (last_delta_hr >= 0) $fatal(1, "delta-hr: expected negative delta, got %0d", last_delta_hr);
-
-    // 9) HR baseline updates when enabled and freezes when disabled.
-    apply_default_cfg();
-    cfg_rr_min_ticks = 32'd150;
-    cfg_rr_max_ticks = 32'd2500;
-    cfg_hr_baseline_shift = 4'd1; // fast baseline motion in TB
-    cfg_hr_baseline_en = 1'b1;
-    reset_dut();
-    emit_peak(700);
-    idle_cycles(900);
-    emit_peak(700); // first RR initializes baseline path
-    idle_cycles(40);
-    emit_peak(700);
-    idle_cycles(250);
-    emit_peak(700); // shorter RR -> baseline should move
-    idle_cycles(40);
-    if (hr_baseline_bpm == 16'd0) $fatal(1, "hr-baseline: baseline did not initialize");
-    if (hr_vs_baseline_bpm == 17'sd0) $fatal(1, "hr-baseline: hr_vs_baseline did not update");
-    begin
-      logic [15:0] baseline_hold;
-      baseline_hold = hr_baseline_bpm;
-      cfg_hr_baseline_en = 1'b0;
-      idle_cycles(1200);
-      emit_peak(700);
-      idle_cycles(40);
-      if (hr_baseline_bpm !== baseline_hold) $fatal(1, "hr-baseline: baseline changed while disabled");
-    end
 
     $display("PASS");
     $finish;

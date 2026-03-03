@@ -13,13 +13,8 @@ module rmssd_engine #(
     input  wire                         rr_accepted_i,
     input  wire                         epoch_end_i,
 
-    input  wire                         cfg_baseline_en_i,
-    input  wire [5:0]                   cfg_baseline_shift_i,
-
     output reg  [RR_W-1:0]              rmssd_epoch_o,
     output reg                          rmssd_valid_o,
-    output reg  [RR_W-1:0]              rmssd_baseline_o,
-    output reg  signed [RR_W:0]         rmssd_norm_o,
     output reg  [CNT_W-1:0]             rr_diff_count_o
 );
 
@@ -27,9 +22,6 @@ module rmssd_engine #(
     reg            have_prev_rr_r;
     reg [ACC_W-1:0] sum_sq_r;
     reg [CNT_W-1:0] diff_cnt_r;
-
-    wire signed [RR_W-1:0] rmssd_baseline_s_w;
-    wire rmssd_baseline_valid_w;
 
     function automatic [RR_W-1:0] isqrt_u64;
         input [63:0] x;
@@ -62,20 +54,6 @@ module rmssd_engine #(
         end
     endfunction
 
-    ewma_baseline #(
-        .W(RR_W),
-        .SHIFT_W(6)
-    ) u_rmssd_baseline (
-        .clk_i(clk_i),
-        .rst_ni(rst_ni),
-        .x_in_i($signed(rmssd_epoch_o)),
-        .x_valid_i(rmssd_valid_o),
-        .baseline_en_i(cfg_baseline_en_i),
-        .alpha_shift_i(cfg_baseline_shift_i),
-        .baseline_o(rmssd_baseline_s_w),
-        .baseline_valid_o(rmssd_baseline_valid_w)
-    );
-
     always @(posedge clk_i or negedge rst_ni) begin
         reg signed [RR_W:0] diff_v;
         reg [ACC_W-1:0] diff_sq_v;
@@ -89,12 +67,9 @@ module rmssd_engine #(
 
             rmssd_epoch_o <= {RR_W{1'b0}};
             rmssd_valid_o <= 1'b0;
-            rmssd_baseline_o <= {RR_W{1'b0}};
-            rmssd_norm_o <= '0;
             rr_diff_count_o <= {CNT_W{1'b0}};
         end else begin
             rmssd_valid_o <= 1'b0;
-            rmssd_baseline_o <= rmssd_baseline_valid_w ? rmssd_baseline_s_w[RR_W-1:0] : {RR_W{1'b0}};
 
             if (rr_valid_i && rr_accepted_i) begin
                 if (have_prev_rr_r) begin
@@ -114,14 +89,8 @@ module rmssd_engine #(
                     rmssd_v = isqrt_u64(mean_sq_v[63:0]);
                     rmssd_epoch_o <= rmssd_v;
                     rmssd_valid_o <= 1'b1;
-                    if (rmssd_baseline_valid_w) begin
-                        rmssd_norm_o <= $signed({1'b0, rmssd_v}) - $signed(rmssd_baseline_s_w);
-                    end else begin
-                        rmssd_norm_o <= '0;
-                    end
                 end else begin
                     rmssd_epoch_o <= {RR_W{1'b0}};
-                    rmssd_norm_o <= '0;
                 end
 
                 sum_sq_r <= {ACC_W{1'b0}};

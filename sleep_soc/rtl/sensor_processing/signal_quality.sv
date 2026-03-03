@@ -32,7 +32,7 @@ module signal_quality #(
     output reg                      ppg_valid_epoch_o,
     output reg                      overall_valid_epoch_o,
     output reg  [7:0]               invalid_reason_o,
-    output reg                      baseline_update_gate_o
+    output reg                      ml_update_gate_o
 );
 
     reg [CNT_W-1:0] beat_cnt_r, good_beat_cnt_r;
@@ -58,7 +58,7 @@ module signal_quality #(
             ppg_valid_epoch_o <= 1'b0;
             overall_valid_epoch_o <= 1'b0;
             invalid_reason_o <= 8'd0;
-            baseline_update_gate_o <= 1'b0;
+            ml_update_gate_o <= 1'b0;
         end else begin
             quality_epoch_valid_o <= 1'b0;
 
@@ -103,8 +103,8 @@ module signal_quality #(
                 ppg_valid_epoch_o <= !(overflow_seen_r || i2c_err_seen_r || no_beats_v || low_frac_v);
                 overall_valid_epoch_o <= !(overflow_seen_r || i2c_err_seen_r || no_beats_v || low_frac_v ||
                                            double_bad_v || missed_bad_v || motion_bad_v);
-                baseline_update_gate_o <= !(overflow_seen_r || i2c_err_seen_r || no_beats_v || low_frac_v ||
-                                            double_bad_v || missed_bad_v || motion_bad_v);
+                ml_update_gate_o <= !(overflow_seen_r || i2c_err_seen_r || no_beats_v || low_frac_v ||
+                                      double_bad_v || missed_bad_v || motion_bad_v);
 
                 beat_cnt_r <= '0;
                 good_beat_cnt_r <= '0;

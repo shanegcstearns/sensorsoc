@@ -39,8 +39,6 @@ module ppg_beat_detect_rr_calc #(
     input  wire [7:0]                   cfg_q_slope_w_i,
     input  wire [7:0]                   cfg_q_refrac_penalty_i,
     input  wire [7:0]                   cfg_q_min_accept_i,
-    input  wire                         cfg_hr_baseline_en_i,
-    input  wire [3:0]                   cfg_hr_baseline_shift_i,
 
     output reg                          beat_pulse_o,
     output reg  [T_W-1:0]               beat_time_o,
@@ -49,8 +47,6 @@ module ppg_beat_detect_rr_calc #(
     output reg  [T_W-1:0]               rr_interval_o,
     output reg  [15:0]                  hr_bpm_o,
     output reg  signed [16:0]           delta_hr_bpm_o,
-    output reg  [15:0]                  hr_baseline_bpm_o,
-    output reg  signed [16:0]           hr_vs_baseline_bpm_o,
 
     output reg  [7:0]                   beat_quality_o,
     output reg                          double_beat_o,
@@ -76,23 +72,6 @@ module ppg_beat_detect_rr_calc #(
     reg            have_last_beat_r;
     reg  [15:0]    prev_hr_bpm_r;
     reg            have_prev_hr_r;
-
-    wire signed [15:0] hr_baseline_s_w;
-    wire               hr_baseline_valid_w;
-
-    ewma_baseline #(
-        .W(16),
-        .SHIFT_W(4)
-    ) u_hr_baseline (
-        .clk_i(clk_i),
-        .rst_ni(rst_ni),
-        .x_in_i($signed(hr_bpm_o)),
-        .x_valid_i(rr_valid_o),
-        .baseline_en_i(cfg_hr_baseline_en_i),
-        .alpha_shift_i(cfg_hr_baseline_shift_i),
-        .baseline_o(hr_baseline_s_w),
-        .baseline_valid_o(hr_baseline_valid_w)
-    );
 
     function automatic signed [X_W-1:0] sample_to_signed;
         input [SAMPLE_W-1:0] s;
@@ -174,8 +153,6 @@ module ppg_beat_detect_rr_calc #(
             rr_interval_o     <= {T_W{1'b0}};
             hr_bpm_o          <= 16'd0;
             delta_hr_bpm_o    <= 17'sd0;
-            hr_baseline_bpm_o <= 16'd0;
-            hr_vs_baseline_bpm_o <= 17'sd0;
 
             beat_quality_o    <= 8'd0;
             double_beat_o     <= 1'b0;
@@ -207,7 +184,6 @@ module ppg_beat_detect_rr_calc #(
             rr_accepted_o <= 1'b0;
             double_beat_o  <= 1'b0;
             missed_beat_o  <= 1'b0;
-            hr_baseline_bpm_o <= hr_baseline_valid_w ? hr_baseline_s_w[15:0] : 16'd0;
 
             if (!cfg_enable_i || cfg_bypass_i) begin
                 ppg_invalid_o <= 1'b0;
@@ -333,11 +309,6 @@ module ppg_beat_detect_rr_calc #(
                     if (rr_v != {T_W{1'b0}}) begin
                         hr_bpm_new_v = 16'(32'd60000 / rr_v); // TODO: ASSUMING TIMER IS IN MS
                         hr_bpm_o <= hr_bpm_new_v;
-                        if (hr_baseline_valid_w) begin
-                            hr_vs_baseline_bpm_o <= $signed({1'b0, hr_bpm_new_v}) - $signed(hr_baseline_s_w);
-                        end else begin
-                            hr_vs_baseline_bpm_o <= 17'sd0;
-                        end
                         if (have_prev_hr_r) begin
                             delta_hr_v = $signed({1'b0, hr_bpm_new_v}) - $signed({1'b0, prev_hr_bpm_r});
                         end else begin

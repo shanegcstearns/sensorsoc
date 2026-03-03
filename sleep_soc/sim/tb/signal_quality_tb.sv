@@ -27,7 +27,7 @@ module signal_quality_tb;
   wire         ppg_valid_epoch;
   wire         overall_valid_epoch;
   wire [7:0]   invalid_reason;
-  wire         baseline_update_gate;
+  wire         ml_update_gate;
 
   signal_quality dut (
     .clk_i(clk),
@@ -52,7 +52,7 @@ module signal_quality_tb;
     .ppg_valid_epoch_o(ppg_valid_epoch),
     .overall_valid_epoch_o(overall_valid_epoch),
     .invalid_reason_o(invalid_reason),
-    .baseline_update_gate_o(baseline_update_gate)
+    .ml_update_gate_o(ml_update_gate)
   );
 
   always #10 clk = ~clk;
@@ -142,7 +142,7 @@ module signal_quality_tb;
     if (!quality_epoch_valid) $fatal(1, "epoch1 quality_epoch_valid not asserted");
     if (!ppg_valid_epoch) $fatal(1, "epoch1 ppg_valid_epoch expected 1");
     if (!overall_valid_epoch) $fatal(1, "epoch1 overall_valid_epoch expected 1");
-    if (!baseline_update_gate) $fatal(1, "epoch1 baseline gate expected 1");
+    if (!ml_update_gate) $fatal(1, "epoch1 ml update gate expected 1");
     if (invalid_reason != 8'h00) $fatal(1, "epoch1 invalid_reason expected 0 got=0x%02x", invalid_reason);
     if (ppg_valid_fraction < 8'd240) $fatal(1, "epoch1 fraction too low got=%0d", ppg_valid_fraction);
 
@@ -159,7 +159,7 @@ module signal_quality_tb;
     repeat (1) @(posedge clk);
     if (ppg_valid_epoch) $fatal(1, "epoch2 ppg_valid_epoch expected 0");
     if (overall_valid_epoch) $fatal(1, "epoch2 overall_valid_epoch expected 0");
-    if (baseline_update_gate) $fatal(1, "epoch2 baseline gate expected 0");
+    if (ml_update_gate) $fatal(1, "epoch2 ml update gate expected 0");
     if (!invalid_reason[0]) $fatal(1, "epoch2 overflow reason bit missing");
     if (!invalid_reason[1]) $fatal(1, "epoch2 i2c reason bit missing");
     if (!invalid_reason[3]) $fatal(1, "epoch2 low quality reason bit missing");

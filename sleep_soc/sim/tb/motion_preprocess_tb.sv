@@ -13,8 +13,6 @@ module motion_preprocess_tb;
   logic signed [AX_W-1:0] ax, ay, az;
 
   // config
-  logic        cfg_hp_en;
-  logic [3:0]  cfg_ewma_shift;
   logic [16:0] cfg_th_hi;
   logic [16:0] cfg_th_lo;
   logic [16:0] cfg_still_th;
@@ -23,13 +21,10 @@ module motion_preprocess_tb;
   logic        cfg_epoch_external;
   logic        epoch_end;
   logic        cfg_energy_sq;
-  logic        cfg_motion_base_en;
-  logic [5:0]  cfg_motion_base_shift;
 
   // outputs
   wire        motion_valid;
   wire [15:0] motion_mag;
-  wire [16:0] motion_dyn;
   wire        burst_pulse;
   wire        in_burst;
   wire        stillness_flag;
@@ -37,8 +32,6 @@ module motion_preprocess_tb;
   wire        epoch_done;
   wire [47:0] motion_energy_epoch;
   wire signed [48:0] motion_delta_epoch;
-  wire [47:0] motion_baseline;
-  wire signed [48:0] motion_vs_baseline;
   wire [15:0] burst_count_epoch;
   wire [15:0] stillness_count_epoch;
   wire [15:0] sample_count_epoch;
@@ -53,8 +46,6 @@ module motion_preprocess_tb;
     .ay_i(ay),
     .az_i(az),
 
-    .cfg_hp_en_i(cfg_hp_en),
-    .cfg_ewma_shift_i(cfg_ewma_shift),
     .cfg_th_hi_i(cfg_th_hi),
     .cfg_th_lo_i(cfg_th_lo),
     .cfg_still_th_i(cfg_still_th),
@@ -63,12 +54,9 @@ module motion_preprocess_tb;
     .cfg_epoch_external_i(cfg_epoch_external),
     .epoch_end_i(epoch_end),
     .cfg_energy_sq_i(cfg_energy_sq),
-    .cfg_motion_base_en_i(cfg_motion_base_en),
-    .cfg_motion_base_shift_i(cfg_motion_base_shift),
 
     .motion_valid_o(motion_valid),
     .motion_mag_o(motion_mag),
-    .motion_dyn_o(motion_dyn),
     .burst_pulse_o(burst_pulse),
     .in_burst_o(in_burst),
     .stillness_flag_o(stillness_flag),
@@ -76,8 +64,6 @@ module motion_preprocess_tb;
     .epoch_done_o(epoch_done),
     .motion_energy_epoch_o(motion_energy_epoch),
     .motion_delta_epoch_o(motion_delta_epoch),
-    .motion_baseline_o(motion_baseline),
-    .motion_vs_baseline_o(motion_vs_baseline),
     .burst_count_epoch_o(burst_count_epoch),
     .stillness_count_epoch_o(stillness_count_epoch),
     .sample_count_epoch_o(sample_count_epoch)
@@ -147,13 +133,10 @@ module motion_preprocess_tb;
 
   initial begin
     bit still_seen;
-    logic [16:0] dyn_first;
     sample_valid = 0;
     sample_ok    = 0;
     ax = '0; ay = '0; az = '0;
 
-    cfg_hp_en       = 0;
-    cfg_ewma_shift  = 4;
     cfg_th_hi       = 17'd1000;
     cfg_th_lo       = 17'd500;
     cfg_still_th    = 17'd50;
@@ -162,13 +145,10 @@ module motion_preprocess_tb;
     cfg_epoch_external = 1'b0;
     epoch_end = 1'b0;
     cfg_energy_sq   = 1'b0;
-    cfg_motion_base_en = 1'b1;
-    cfg_motion_base_shift = 6'd2;
 
     do_reset();
 
     // test 1: sample ok gating + mag/dyn/energy
-    cfg_hp_en      = 1'b0;
     cfg_energy_sq  = 1'b0;
     cfg_epoch_len  = 16'd4;
     cfg_th_hi      = 17'd2000;
@@ -183,11 +163,9 @@ module motion_preprocess_tb;
     send_sample(0, 0, 0, 1'b1);  // check previous sample
     if (!motion_valid) $fatal(1, "mag/dyn: motion_valid not asserted");
     if (motion_mag !== 16'd12) $fatal(1, "mag mismatch: got=%0d exp=12", motion_mag);
-    if (motion_dyn !== 17'd12) $fatal(1, "dyn mismatch: got=%0d exp=12", motion_dyn);
 
     // test 2: epoch_len=0 treated as 1
     do_reset();
-    cfg_hp_en      = 1'b0;
     cfg_energy_sq  = 1'b0;
     cfg_epoch_len  = 16'd0;
     cfg_th_hi      = 17'd1000;
@@ -202,7 +180,6 @@ module motion_preprocess_tb;
 
     // test 3: energy_sq mode with epoch_len=1
     do_reset();
-    cfg_hp_en      = 1'b0;
     cfg_energy_sq  = 1'b1;
     cfg_epoch_len  = 16'd1;
     cfg_th_hi      = 17'd1000;
@@ -216,7 +193,6 @@ module motion_preprocess_tb;
 
     // test 4: debounce_n=0 treated as 1, burst enter/exit
     do_reset();
-    cfg_hp_en      = 1'b0;
     cfg_energy_sq  = 1'b0;
     cfg_epoch_len  = 16'd8;
     cfg_th_hi      = 17'd10;
@@ -233,8 +209,6 @@ module motion_preprocess_tb;
 
     // test 5: steady still: no bursts, energy about 0, stillness count == epoch_len
     do_reset();
-    cfg_hp_en       = 0;
-    cfg_ewma_shift  = 4;
     cfg_th_hi       = 17'd1000;
     cfg_th_lo       = 17'd500;
     cfg_still_th    = 17'd50;
@@ -272,23 +246,7 @@ module motion_preprocess_tb;
     repeat (2) @(posedge clk);
     if (burst_pulses_seen != 2) $fatal(1, "periodic: expected 2 burst pulses, got %0d", burst_pulses_seen);
 
-    // test 8: baseline removal enabled: constant signal should settle to about 0 dyn
-    do_reset();
-    cfg_hp_en      = 1'b1;
-    cfg_ewma_shift = 2;        // fast baseline tracking
-    cfg_th_hi      = 17'd2000;
-    cfg_th_lo      = 17'd1500;
-    cfg_still_th   = 17'd5;
-    cfg_debounce_n = 8'd2;
-    burst_pulses_seen = 0;
-    send_sample(1000, 0, 0, 1'b1); // ramp baseline toward constant input
-    send_sample(1000, 0, 0, 1'b1);
-    dyn_first = motion_dyn;
-    repeat (9) send_sample(1000, 0, 0, 1'b1);
-    if (motion_dyn >= dyn_first) $fatal(1, "baseline removal: dyn did not decrease (peak=%0d now=%0d)", dyn_first, motion_dyn);
-    if (burst_pulses_seen != 0) $fatal(1, "baseline removal: unexpected bursts=%0d", burst_pulses_seen);
-
-    // test 9: external epoch mode should finalize on epoch_end pulse (not sample count)
+    // test 8: external epoch mode should finalize on epoch_end pulse (not sample count)
     do_reset();
     cfg_epoch_external = 1'b1;
     cfg_epoch_len      = 16'd200; // ignored in external mode
@@ -300,27 +258,6 @@ module motion_preprocess_tb;
     repeat (2) @(posedge clk);
     if (!epoch_done_seen) $fatal(1, "external epoch: did not observe epoch_done after pulse");
     if (sample_count_epoch != 16'd5) $fatal(1, "external epoch: sample_count_epoch=%0d exp=5", sample_count_epoch);
-
-    // test 10: motion baseline updates on epochs and freezes when baseline_en=0
-    do_reset();
-    cfg_epoch_external    = 1'b1;
-    cfg_motion_base_shift = 6'd1;
-    cfg_motion_base_en    = 1'b1;
-    repeat (6) send_sample(20, 0, 0, 1'b1);
-    pulse_epoch_end(); // baseline init
-    repeat (6) send_sample(200, 0, 0, 1'b1);
-    pulse_epoch_end(); // baseline should move
-    repeat (2) @(posedge clk);
-    if (motion_baseline == 48'd0) $fatal(1, "motion baseline: did not initialize");
-    begin
-      logic [47:0] baseline_hold;
-      baseline_hold = motion_baseline;
-      cfg_motion_base_en = 1'b0;
-      repeat (6) send_sample(1000, 0, 0, 1'b1);
-      pulse_epoch_end();
-      repeat (2) @(posedge clk);
-      if (motion_baseline !== baseline_hold) $fatal(1, "motion baseline: changed while disabled");
-    end
 
     $display("PASS");
     $finish;
