@@ -4,7 +4,7 @@ import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import FallingEdge, ClockCycles
 from cocotbext.axi import AxiLiteBus, AxiLiteMaster, AxiBus, AxiRam
-
+import logging
 
 SCALE = 8192
 
@@ -33,6 +33,8 @@ async def load_weights_and_infer_once(dut):
     await reset_dut(dut)
     clk_i = dut.CLK
 
+    logging.getLogger("cocotbext.axi").setLevel(logging.WARNING)
+    
     axil = AxiLiteMaster(
         AxiLiteBus.from_prefix(dut, "saxi"),
         dut.CLK,
@@ -86,23 +88,31 @@ async def load_weights_and_infer_once(dut):
         ds = f.readlines()
     
     for line in ds:
-        print(line)
-        feats = line.split(",")
-        print(feats)
-        await axil.write(0x10, u32(1))
-        feats[0] = max(-32768, min(int((float(feats[0])/8.0) * SCALE), 32767))    #movement
+        #print(line)
+        feats = line.strip().split(",")
+        #print(feats)
+        #await axil.write(0x10, u32(1))
+        feats[0] = max(-32768, min(int((float(feats[0])) * SCALE), 32767))    #movement
         feats[1] = max(-32768, min(int((float(feats[1])) * SCALE), 32767))        #cosine
-        feats[2] = max(-32768, min(int((float(feats[2])/4.0) * SCALE), 32767))    #delta hr
-        feats[3] = max(-32768, min(int((float(feats[0])*20.0) * SCALE), 32767))   #rmssd
+        feats[2] = max(-32768, min(int((float(feats[2])) * SCALE), 32767))    #delta hr
+        feats[3] = max(-32768, min(int((float(feats[3])) * SCALE), 32767))   #rmssd
+        # feats[0] = max(-32768, min(int((float(feats[0])/8.0) * SCALE), 32767))    #movement
+        # feats[1] = max(-32768, min(int((float(feats[1])) * SCALE), 32767))        #cosine
+        # feats[2] = max(-32768, min(int((float(feats[2])/4.0) * SCALE), 32767))    #delta hr
+        # feats[3] = max(-32768, min(int((float(feats[3])*20.0) * SCALE), 32767))   #rmssd
+        print(feats)
         axi_ram.write(x_addr, u16_4(feats))
         # wait for busy to clear
+        await axil.write(0x10, u32(1))
+        
         while(True):
             busy = le32(await axil.read(0x14, 4))
             if busy == 0:
                 break
             await ClockCycles(clk_i, 10)
+        await axil.write(0x10, u32(0))
 
         # read logits from output address
         out_bytes = axi_ram.read(out_addr, 4)
         log0, log1 = struct.unpack("<2h", out_bytes)
-        dut._log.info(f"logits int16: [{log0}, {log1}] (raw bytes={out_bytes.hex()})")
+        print(f"logits int16: [{log0}, {log1}] (raw bytes={out_bytes.hex()})")

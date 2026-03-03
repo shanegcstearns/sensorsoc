@@ -13,5 +13,7 @@ COCOTB_TOPLEVEL = taketwo_wrap
 # COCOTB_TEST_MODULES is the basename of the Python test file(s)
 COCOTB_TEST_MODULES = ml_tb
 
+COCOTB_LOG_LEVEL = WARNING
+
 # include cocotb's make rules to take care of the simulator setup
 include $(shell cocotb-config --makefiles)/Makefile.sim
