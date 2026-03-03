@@ -12,6 +12,7 @@ module soc_top #(
     parameter PWR_BASE    = 32'h0300_1000,
     parameter TIMER_BASE  = 32'h0300_2000,
     parameter ML_BASE     = 32'h0300_3000,
+    parameter IRQC_BASE   = 32'h0300_5000,
     parameter TEST_BASE = 32'h0300_F000
 )(
     input  wire        clk,        // always-on clock
@@ -51,13 +52,13 @@ module soc_top #(
     wire [31:0] mem_rdata;
     wire trap;
 
-    // IRQ not required yet, add later
-    wire [31:0] irq = 32'b0;
+    // IRQ wiring is provided by SoC IRQ controller.
+    wire [31:0] irq;
 
     //Tweak these later when I add flash/XIP.
     localparam [31:0] STACKADDR      = 4*MEM_WORDS;
     localparam [31:0] PROGADDR_RESET = 32'h0000_0000;
-    localparam [31:0] PROGADDR_IRQ   = 32'h0000_0000;
+    localparam [31:0] PROGADDR_IRQ   = 32'h0000_0010;
 
     picorv32 #(
         .STACKADDR(STACKADDR),
@@ -69,8 +70,8 @@ module soc_top #(
         .ENABLE_MUL(1),
         .ENABLE_DIV(1),
         .ENABLE_FAST_MUL(0),
-        .ENABLE_IRQ(0),
-        .ENABLE_IRQ_QREGS(0)
+        .ENABLE_IRQ(1),
+        .ENABLE_IRQ_QREGS(1)
     ) cpu (
         .clk       (cpu_clk),
         .resetn    (resetn),
@@ -169,6 +170,26 @@ module soc_top #(
         .score_o  (ml_score)
     );
 
+    // IRQ controller: pending/mask/wake filtering + MMIO visibility.
+    wire        irqc_ready;
+    wire [31:0] irqc_rdata;
+    wire        irqc_wake_req;
+    wire [31:0] irq_sources = {30'b0, ml_event, timer_event};
+
+    irq_ctrl_mmio #(.BASE_ADDR(IRQC_BASE)) u_irqc (
+        .clk      (clk),
+        .resetn   (resetn),
+        .mem_valid(mmio_sel),
+        .mem_addr (mem_addr),
+        .mem_wdata(mem_wdata),
+        .mem_wstrb(mem_wstrb),
+        .mem_ready(irqc_ready),
+        .mem_rdata(irqc_rdata),
+        .irq_src_i(irq_sources),
+        .irq_o    (irq),
+        .wake_req_o(irqc_wake_req)
+    );
+
     // Power controller MMIO: sleep request + wake status/reason
     wire        pwr_ready;
     wire [31:0] pwr_rdata;
@@ -176,7 +197,7 @@ module soc_top #(
 
     // Wake sources (always-on)
     wire [31:0] wake_sources;
-    assign wake_sources = {30'b0, ml_event, timer_event}; // bit1=ML, bit0=timer
+    assign wake_sources = irq_sources;
 
     pwrctrl_mmio #(.BASE_ADDR(PWR_BASE)) u_pwr (
         .clk        (clk),
@@ -212,13 +233,14 @@ module soc_top #(
 
 
     // MMIO bus response mux (to PicoRV32)
-    wire mmio_ready = gpio_ready | pwr_ready | timer_ready | ml_ready | test_ready;
+    wire mmio_ready = gpio_ready | pwr_ready | timer_ready | ml_ready | irqc_ready | test_ready;
 
     wire [31:0] mmio_rdata =
         gpio_ready  ? gpio_rdata  :
         pwr_ready   ? pwr_rdata   :
         timer_ready ? timer_rdata :
         ml_ready    ? ml_rdata    :
+        irqc_ready  ? irqc_rdata  :
         test_ready  ? test_rdata  :
         32'h0000_0000;
 
@@ -256,9 +278,9 @@ always @(posedge clk) begin
       cpu_idle_seen <= cpu_idle_seen | (~mem_valid);
     end
 
-    // Wake has highest priority (works even when cpu_clk_en=0)
     if (sleeping) begin
-      if (wake_event) begin
+      // Wake has highest priority when sleeping.
+      if (irqc_wake_req || wake_event) begin
         cpu_clk_en    <= 1'b1;
         sleeping      <= 1'b0;
         cpu_idle_seen <= 1'b0; // require a fresh idle observation before sleeping again
@@ -268,7 +290,7 @@ always @(posedge clk) begin
       //  - firmware requested it
       //  - we've observed at least one idle cycle (prevents mid-transaction gating)
       //  - no wake event pending
-      if (sleep_req && cpu_idle_seen && !wake_event) begin
+      if (sleep_req && cpu_idle_seen && !(irqc_wake_req || wake_event)) begin
         cpu_clk_en    <= 1'b0;
         sleeping      <= 1'b1;
         cpu_idle_seen <= 1'b0;

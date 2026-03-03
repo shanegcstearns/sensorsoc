@@ -94,10 +94,13 @@ SOC_RTL_SRCS := \
   $(RTL_DIR)/test_mmio.v \
   $(RTL_DIR)/timer_mmio.v \
   $(RTL_DIR)/ml_stub_mmio.v \
+  $(RTL_DIR)/irq_ctrl_mmio.v \
   $(RTL_DIR)/pwrctrl_mmio.v
 
 SOC_TB_SRCS  := $(TB_DIR)/tb_soc.sv
 SOC_VVP      := sim_soc.vvp
+IRQ_TB_SRCS  := $(TB_DIR)/tb_irq.sv
+IRQ_VVP      := sim_irq.vvp
 
 # Default firmware outputs used by soc_top
 FW_HEX       := $(FW_BUILD)/firmware.hex
@@ -173,6 +176,22 @@ $(SOC_VVP): $(SOC_TB_SRCS) $(SOC_RTL_SRCS)
 sim-soc: $(SOC_VVP) $(FW_HEX) | $(SIM_BUILD)
 	@echo "[SIM] Running tb_soc (will read $(FW_HEX))"
 	$(VVP) $(SOC_VVP)
+
+# ----------------------------
+# IRQ testbench (tb_irq)
+# ----------------------------
+.PHONY: build-irq sim-irq
+build-irq: $(IRQ_VVP)
+
+$(IRQ_VVP): $(IRQ_TB_SRCS) $(SOC_RTL_SRCS)
+	@echo "[SIM] Building $@"
+	$(IVERILOG) -g2012 -s tb_irq -o $@ \
+	  $(IRQ_TB_SRCS) \
+	  $(SOC_RTL_SRCS)
+
+sim-irq: $(IRQ_VVP) $(FW_HEX) | $(SIM_BUILD)
+	@echo "[SIM] Running tb_irq (will read $(FW_HEX))"
+	$(VVP) $(IRQ_VVP)
 
 # ----------------------------
 # Cocotb: test_mmio
