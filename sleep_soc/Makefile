@@ -227,7 +227,7 @@ test-timer: $(TIMER_VVP)
 
 MOTION_PREPROCESS_TOP     := motion_preprocess_tb
 MOTION_PREPROCESS_VVP     := $(BUILD_DIR)/$(MOTION_PREPROCESS_TOP).vvp
-MOTION_PREPROCESS_SOURCES := sim/tb/motion_preprocess_tb.sv rtl/sensor_processing/motion_preprocess.sv
+MOTION_PREPROCESS_SOURCES := sim/tb/motion_preprocess_tb.sv rtl/sensor_processing/motion_preprocess.sv rtl/sensor_processing/ewma_baseline.sv
 MOTION_PREPROCESS_VCD     := $(WAVE_DIR)/motion_preprocess_tb.vcd
 
 $(MOTION_PREPROCESS_VVP): $(MOTION_PREPROCESS_SOURCES)
@@ -263,7 +263,7 @@ sim-ppg-fifo-reader: $(PPG_FIFO_READER_VVP)
 
 PPG_BEAT_RR_TOP     := ppg_beat_detect_rr_calc_tb
 PPG_BEAT_RR_VVP     := $(BUILD_DIR)/$(PPG_BEAT_RR_TOP).vvp
-PPG_BEAT_RR_SOURCES := sim/tb/ppg_beat_detect_rr_calc_tb.sv rtl/sensor_processing/ppg_beat_detect_rr_calc.sv
+PPG_BEAT_RR_SOURCES := sim/tb/ppg_beat_detect_rr_calc_tb.sv rtl/sensor_processing/ppg_beat_detect_rr_calc.sv rtl/sensor_processing/ewma_baseline.sv
 PPG_BEAT_RR_VCD     := $(WAVE_DIR)/ppg_beat_detect_rr_calc_tb.vcd
 
 $(PPG_BEAT_RR_VVP): $(PPG_BEAT_RR_SOURCES)
@@ -274,6 +274,78 @@ sim-ppg-beat-rr: $(PPG_BEAT_RR_VVP)
 	@echo "== Running $(PPG_BEAT_RR_TOP) (VCD -> $(PPG_BEAT_RR_VCD)) =="
 	@mkdir -p $(WAVE_DIR)
 	@cd $(WAVE_DIR) && $(VVP) $(abspath $(PPG_BEAT_RR_VVP))
+
+# ============================================================
+# ACCEL READER
+# ============================================================
+
+ACCEL_READER_TOP     := accel_reader_tb
+ACCEL_READER_VVP     := $(BUILD_DIR)/$(ACCEL_READER_TOP).vvp
+ACCEL_READER_SOURCES := sim/tb/accel_reader_tb.sv rtl/sensor_processing/accel_reader.sv
+ACCEL_READER_VCD     := $(WAVE_DIR)/accel_reader_tb.vcd
+
+$(ACCEL_READER_VVP): $(ACCEL_READER_SOURCES)
+	$(IVERILOG) -g2012 -o $@ $^
+
+.PHONY: sim-accel-reader
+sim-accel-reader: $(ACCEL_READER_VVP)
+	@echo "== Running $(ACCEL_READER_TOP) (VCD -> $(ACCEL_READER_VCD)) =="
+	@mkdir -p $(WAVE_DIR)
+	@cd $(WAVE_DIR) && $(VVP) $(abspath $(ACCEL_READER_VVP))
+
+# ============================================================
+# RMSSD ENGINE
+# ============================================================
+
+RMSSD_ENGINE_TOP     := rmssd_engine_tb
+RMSSD_ENGINE_VVP     := $(BUILD_DIR)/$(RMSSD_ENGINE_TOP).vvp
+RMSSD_ENGINE_SOURCES := sim/tb/rmssd_engine_tb.sv rtl/sensor_processing/rmssd_engine.sv rtl/sensor_processing/ewma_baseline.sv
+RMSSD_ENGINE_VCD     := $(WAVE_DIR)/rmssd_engine_tb.vcd
+
+$(RMSSD_ENGINE_VVP): $(RMSSD_ENGINE_SOURCES)
+	$(IVERILOG) -g2012 -o $@ $^
+
+.PHONY: sim-rmssd-engine
+sim-rmssd-engine: $(RMSSD_ENGINE_VVP)
+	@echo "== Running $(RMSSD_ENGINE_TOP) (VCD -> $(RMSSD_ENGINE_VCD)) =="
+	@mkdir -p $(WAVE_DIR)
+	@cd $(WAVE_DIR) && $(VVP) $(abspath $(RMSSD_ENGINE_VVP))
+
+# ============================================================
+# SIGNAL QUALITY
+# ============================================================
+
+SIGNAL_QUALITY_TOP     := signal_quality_tb
+SIGNAL_QUALITY_VVP     := $(BUILD_DIR)/$(SIGNAL_QUALITY_TOP).vvp
+SIGNAL_QUALITY_SOURCES := sim/tb/signal_quality_tb.sv rtl/sensor_processing/signal_quality.sv
+SIGNAL_QUALITY_VCD     := $(WAVE_DIR)/signal_quality_tb.vcd
+
+$(SIGNAL_QUALITY_VVP): $(SIGNAL_QUALITY_SOURCES)
+	$(IVERILOG) -g2012 -o $@ $^
+
+.PHONY: sim-signal-quality
+sim-signal-quality: $(SIGNAL_QUALITY_VVP)
+	@echo "== Running $(SIGNAL_QUALITY_TOP) (VCD -> $(SIGNAL_QUALITY_VCD)) =="
+	@mkdir -p $(WAVE_DIR)
+	@cd $(WAVE_DIR) && $(VVP) $(abspath $(SIGNAL_QUALITY_VVP))
+
+# ============================================================
+# COS LUT TIMER
+# ============================================================
+
+COS_LUT_TIMER_TOP     := cos_lut_timer_tb
+COS_LUT_TIMER_VVP     := $(BUILD_DIR)/$(COS_LUT_TIMER_TOP).vvp
+COS_LUT_TIMER_SOURCES := sim/tb/cos_lut_timer_tb.sv rtl/cos_lut_timer.sv
+COS_LUT_TIMER_VCD     := $(WAVE_DIR)/cos_lut_timer_tb.vcd
+
+$(COS_LUT_TIMER_VVP): $(COS_LUT_TIMER_SOURCES)
+	$(IVERILOG) -g2012 -o $@ $^
+
+.PHONY: sim-cos-lut-timer
+sim-cos-lut-timer: $(COS_LUT_TIMER_VVP)
+	@echo "== Running $(COS_LUT_TIMER_TOP) (VCD -> $(COS_LUT_TIMER_VCD)) =="
+	@mkdir -p $(WAVE_DIR)
+	@cd $(WAVE_DIR) && $(VVP) $(abspath $(COS_LUT_TIMER_VVP))
 
 # ============================================================
 # Cleanup
