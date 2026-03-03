@@ -26,13 +26,16 @@ module motion_preprocess #(
     input  wire [7:0]               cfg_debounce_n_i,    // consecutive samples above TH_HI to enter burst
 
     input  wire [15:0]              cfg_epoch_len_i,     // samples per epoch (0 treated as 1)
+    input  wire                     cfg_epoch_external_i, // 0: sample-count epoch, 1: epoch_end_i pulse
+    input  wire                     epoch_end_i,
     input  wire                     cfg_energy_sq_i,     // 0: dyn, 1: dyn^2
+    input  wire                     cfg_motion_base_en_i,
+    input  wire [5:0]               cfg_motion_base_shift_i,
 
     // Per sample outputs
     output reg                      motion_valid_o,
     output reg  [MAG_W-1:0]         motion_mag_o,
     output reg  [DYN_W-1:0]         motion_dyn_o,
-    output reg  [ENERGY_W-1:0]      motion_energy_accum_o,
     output reg                      burst_pulse_o,
     output reg                      in_burst_o,
     output reg                      stillness_flag_o,
@@ -41,6 +44,8 @@ module motion_preprocess #(
     output reg                      epoch_done_o,
     output reg  [ENERGY_W-1:0]      motion_energy_epoch_o,
     output reg  signed [ENERGY_W:0] motion_delta_epoch_o,
+    output reg  [ENERGY_W-1:0]      motion_baseline_o,
+    output reg  signed [ENERGY_W:0] motion_vs_baseline_o,
     output reg  [15:0]              burst_count_epoch_o,
     output reg  [15:0]              stillness_count_epoch_o,
     output reg  [15:0]              sample_count_epoch_o
@@ -110,6 +115,8 @@ module motion_preprocess #(
     wire [ENERGY_W-1:0] dyn_sq_ext = (2*DYN_W >= ENERGY_W) ? dyn_sq_w[ENERGY_W-1:0]
                                                            : {{(ENERGY_W-2*DYN_W){1'b0}}, dyn_sq_w};
     wire [ENERGY_W-1:0] energy_add_w = cfg_energy_sq_i ? dyn_sq_ext : dyn_ext;
+    reg  [ENERGY_W-1:0] motion_energy_accum_r;
+    wire [ENERGY_W-1:0] accum_next_w = motion_energy_accum_r + energy_add_w;
 
     // burst detector
     reg [7:0]  hi_cnt_r;
@@ -127,13 +134,36 @@ module motion_preprocess #(
     // epoch counters and previous epoch for delta
     reg [15:0]         epoch_cnt_r;
     reg [ENERGY_W-1:0] prev_epoch_energy_r;
+    wire [ENERGY_W-1:0] epoch_energy_w = motion_energy_accum_r + (sample_fire ? energy_add_w : {ENERGY_W{1'b0}});
+    wire [15:0] sample_count_next_w = epoch_cnt_r + (sample_fire ? 16'd1 : 16'd0);
+    wire [15:0] still_count_next_w = still_cnt_r + ((sample_fire && still_w) ? 16'd1 : 16'd0);
+    wire [15:0] burst_count_next_w = burst_count_r + ((sample_fire && will_enter_burst_w) ? 16'd1 : 16'd0);
+    wire epoch_by_count_w = sample_fire && (epoch_cnt_r == (epoch_len_eff - 16'd1));
+    wire epoch_fire_w = cfg_epoch_external_i ? epoch_end_i : epoch_by_count_w;
+
+    wire signed [ENERGY_W-1:0] motion_baseline_signed_w;
+    wire motion_baseline_valid_w;
+
+    ewma_baseline #(
+        .W(ENERGY_W),
+        .SHIFT_W(6)
+    ) u_motion_baseline (
+        .clk_i(clk),
+        .rst_ni(resetn),
+        .x_in_i($signed(epoch_energy_w)),
+        .x_valid_i(epoch_fire_w),
+        .baseline_en_i(cfg_motion_base_en_i),
+        .alpha_shift_i(cfg_motion_base_shift_i),
+        .baseline_o(motion_baseline_signed_w),
+        .baseline_valid_o(motion_baseline_valid_w)
+    );
 
     always @(posedge clk) begin
         if (!resetn) begin
             motion_valid_o          <= 1'b0;
             motion_mag_o            <= {MAG_W{1'b0}};
             motion_dyn_o            <= {DYN_W{1'b0}};
-            motion_energy_accum_o   <= {ENERGY_W{1'b0}};
+            motion_energy_accum_r   <= {ENERGY_W{1'b0}};
             burst_pulse_o           <= 1'b0;
             in_burst_o              <= 1'b0;
             stillness_flag_o        <= 1'b0;
@@ -151,6 +181,8 @@ module motion_preprocess #(
             epoch_done_o            <= 1'b0;
             motion_energy_epoch_o   <= {ENERGY_W{1'b0}};
             motion_delta_epoch_o    <= '0;
+            motion_baseline_o       <= {ENERGY_W{1'b0}};
+            motion_vs_baseline_o    <= '0;
             burst_count_epoch_o     <= 16'd0;
             stillness_count_epoch_o <= 16'd0;
             sample_count_epoch_o    <= 16'd0;
@@ -158,6 +190,7 @@ module motion_preprocess #(
             motion_valid_o <= sample_fire;
             burst_pulse_o  <= 1'b0;
             epoch_done_o   <= 1'b0;
+            motion_baseline_o <= motion_baseline_valid_w ? motion_baseline_signed_w[ENERGY_W-1:0] : {ENERGY_W{1'b0}};
 
             if (sample_fire) begin
                 motion_mag_o <= mag1_w;
@@ -202,28 +235,31 @@ module motion_preprocess #(
                     end
                 end
 
-                // energy accumulation
-                motion_energy_accum_o <= motion_energy_accum_o + energy_add_w;
-
-                // epoch handling (counts valid samples)
+                // energy accumulation + sample count
+                motion_energy_accum_r <= accum_next_w;
                 epoch_cnt_r <= epoch_cnt_r + 16'd1;
+            end
 
-                if (epoch_cnt_r == (epoch_len_eff - 16'd1)) begin
-                    epoch_done_o            <= 1'b1;
-                    motion_energy_epoch_o   <= motion_energy_accum_o + energy_add_w;
-                    motion_delta_epoch_o    <= $signed({1'b0, (motion_energy_accum_o + energy_add_w)}) -
-                                               $signed({1'b0, prev_epoch_energy_r});
-                    prev_epoch_energy_r     <= motion_energy_accum_o + energy_add_w;
-                    burst_count_epoch_o     <= burst_count_r + (will_enter_burst_w ? 16'd1 : 16'd0);
-                    stillness_count_epoch_o <= still_cnt_r + (still_w ? 16'd1 : 16'd0);
-                    sample_count_epoch_o    <= epoch_cnt_r + 16'd1;
-
-                    // reset epoch counters for next epoch
-                    motion_energy_accum_o   <= {ENERGY_W{1'b0}};
-                    epoch_cnt_r             <= 16'd0;
-                    burst_count_r           <= 16'd0;
-                    still_cnt_r             <= 16'd0;
+            if (epoch_fire_w) begin
+                epoch_done_o            <= 1'b1;
+                motion_energy_epoch_o   <= epoch_energy_w;
+                motion_delta_epoch_o    <= $signed({1'b0, epoch_energy_w}) - $signed({1'b0, prev_epoch_energy_r});
+                prev_epoch_energy_r     <= epoch_energy_w;
+                burst_count_epoch_o     <= burst_count_next_w;
+                stillness_count_epoch_o <= still_count_next_w;
+                sample_count_epoch_o    <= sample_count_next_w;
+                if (motion_baseline_valid_w) begin
+                    motion_vs_baseline_o <= $signed({1'b0, epoch_energy_w}) -
+                                            $signed({motion_baseline_signed_w[ENERGY_W-1], motion_baseline_signed_w});
+                end else begin
+                    motion_vs_baseline_o <= '0;
                 end
+
+                // reset epoch counters for next epoch
+                motion_energy_accum_r   <= {ENERGY_W{1'b0}};
+                epoch_cnt_r             <= 16'd0;
+                burst_count_r           <= 16'd0;
+                still_cnt_r             <= 16'd0;
             end
         end
     end
