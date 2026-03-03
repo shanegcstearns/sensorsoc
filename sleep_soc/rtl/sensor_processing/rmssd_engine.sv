@@ -3,7 +3,8 @@
 module rmssd_engine #(
     parameter integer RR_W = 32,
     parameter integer ACC_W = 64,
-    parameter integer CNT_W = 16
+    parameter integer CNT_W = 16,
+    parameter integer MIN_RR_COUNT = 1
 ) (
     input  wire                         clk_i,
     input  wire                         rst_ni,
@@ -84,7 +85,7 @@ module rmssd_engine #(
 
             if (epoch_end_i) begin
                 rr_diff_count_o <= diff_cnt_r;
-                if (diff_cnt_r != {CNT_W{1'b0}}) begin
+                if (diff_cnt_r >= MIN_RR_COUNT[CNT_W-1:0]) begin
                     mean_sq_v = sum_sq_r / diff_cnt_r;
                     rmssd_v = isqrt_u64(mean_sq_v[63:0]);
                     rmssd_epoch_o <= rmssd_v;

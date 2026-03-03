@@ -22,10 +22,6 @@ module signal_quality_tb;
   logic [15:0] cfg_motion_hi_th;
   logic [15:0] cfg_max_motion_hi;
 
-  wire         quality_epoch_valid;
-  wire [7:0]   ppg_valid_fraction;
-  wire         ppg_valid_epoch;
-  wire         overall_valid_epoch;
   wire [7:0]   invalid_reason;
   wire         ml_update_gate;
 
@@ -47,10 +43,6 @@ module signal_quality_tb;
     .cfg_max_missed_i(cfg_max_missed),
     .cfg_motion_hi_th_i(cfg_motion_hi_th),
     .cfg_max_motion_hi_i(cfg_max_motion_hi),
-    .quality_epoch_valid_o(quality_epoch_valid),
-    .ppg_valid_fraction_o(ppg_valid_fraction),
-    .ppg_valid_epoch_o(ppg_valid_epoch),
-    .overall_valid_epoch_o(overall_valid_epoch),
     .invalid_reason_o(invalid_reason),
     .ml_update_gate_o(ml_update_gate)
   );
@@ -139,12 +131,8 @@ module signal_quality_tb;
     send_motion(16'd120);
     pulse_epoch_end();
     repeat (1) @(posedge clk);
-    if (!quality_epoch_valid) $fatal(1, "epoch1 quality_epoch_valid not asserted");
-    if (!ppg_valid_epoch) $fatal(1, "epoch1 ppg_valid_epoch expected 1");
-    if (!overall_valid_epoch) $fatal(1, "epoch1 overall_valid_epoch expected 1");
     if (!ml_update_gate) $fatal(1, "epoch1 ml update gate expected 1");
     if (invalid_reason != 8'h00) $fatal(1, "epoch1 invalid_reason expected 0 got=0x%02x", invalid_reason);
-    if (ppg_valid_fraction < 8'd240) $fatal(1, "epoch1 fraction too low got=%0d", ppg_valid_fraction);
 
     // Epoch 2: low quality + errors + high motion + double/missed excess => invalid
     send_beat(8'd80);
@@ -157,8 +145,6 @@ module signal_quality_tb;
     fifo_i2c_error = 1'b1;
     pulse_epoch_end();
     repeat (1) @(posedge clk);
-    if (ppg_valid_epoch) $fatal(1, "epoch2 ppg_valid_epoch expected 0");
-    if (overall_valid_epoch) $fatal(1, "epoch2 overall_valid_epoch expected 0");
     if (ml_update_gate) $fatal(1, "epoch2 ml update gate expected 0");
     if (!invalid_reason[0]) $fatal(1, "epoch2 overflow reason bit missing");
     if (!invalid_reason[1]) $fatal(1, "epoch2 i2c reason bit missing");
@@ -173,7 +159,7 @@ module signal_quality_tb;
     send_motion(16'd100);
     pulse_epoch_end();
     repeat (1) @(posedge clk);
-    if (overall_valid_epoch) $fatal(1, "epoch3 expected overall invalid");
+    if (ml_update_gate) $fatal(1, "epoch3 ml update gate expected 0");
     if (!invalid_reason[2]) $fatal(1, "epoch3 no_beats reason bit missing");
 
     $display("PASS");

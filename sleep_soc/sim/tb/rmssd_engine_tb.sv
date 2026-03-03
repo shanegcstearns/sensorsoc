@@ -18,7 +18,9 @@ module rmssd_engine_tb;
   logic [31:0] cap_rmssd_epoch;
   logic [15:0] cap_rr_diff_count;
 
-  rmssd_engine dut (
+  rmssd_engine #(
+    .MIN_RR_COUNT(2)
+  ) dut (
     .clk_i(clk),
     .rst_ni(resetn),
     .rr_interval_i(rr_interval),
@@ -102,6 +104,14 @@ module rmssd_engine_tb;
     if (!rmssd_seen) $fatal(1, "epoch2 rmssd_valid not asserted");
     if ((cap_rmssd_epoch < 32'd199) || (cap_rmssd_epoch > 32'd201)) $fatal(1, "epoch2 rmssd mismatch got=%0d exp~200", cap_rmssd_epoch);
     if (cap_rr_diff_count != 16'd2) $fatal(1, "epoch2 rr_diff_count mismatch got=%0d exp=2", cap_rr_diff_count);
+
+    // Epoch 3: insufficient diffs => rmssd_valid should not assert
+    send_rr(32'd1000, 1'b1);
+    send_rr(32'd1100, 1'b1); // only 1 diff
+    rmssd_seen = 1'b0;
+    pulse_epoch_end();
+    repeat (2) @(posedge clk);
+    if (rmssd_seen) $fatal(1, "epoch3 rmssd_valid asserted with insufficient diffs");
 
     $display("PASS");
     $finish;
