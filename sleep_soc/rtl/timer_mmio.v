@@ -42,7 +42,7 @@ module timer_mmio #(
         if (!resetn) begin
             // timer regs
             enable        <= 1'b0;
-            periodic      <= 1'b0;
+            periodic      <= 1'b1;
             reload        <= 32'd5_000_000;
             count         <= 32'd5_000_000;
             event_latched <= 1'b0;
@@ -97,11 +97,15 @@ module timer_mmio #(
                 if (wr) begin
                     case (off)
                         OFF_CTRL: begin
-                            // Your bus is 32-bit, but typically only byte0 matters.
+                            // bus is 32-bit, but typically only byte0 matters.
                             // Respect wstrb[0] so firmware can byte-write.
                             if (mem_wstrb[0]) begin
                                 enable   <= mem_wdata[0];
                                 periodic <= mem_wdata[1];
+                                if(mem_wdata[0]) begin
+                                    event_latched <= 1'b0;
+                                    count <= reload;
+                                end
                             end
                         end
 
@@ -111,6 +115,7 @@ module timer_mmio #(
 
                         OFF_COUNT: begin
                             count <= mem_wdata;
+                            event_latched <= 1'b0; //KICK: clear pending timeout
                         end
 
                         OFF_EVENT: begin

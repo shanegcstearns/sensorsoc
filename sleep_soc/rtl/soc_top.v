@@ -24,13 +24,22 @@ module soc_top #(
     output wire        cpu_awake_o
 );
 
-    // CPU clock gating (always-on wake logic controls cpu_clk_en)
+    //FSM - controlled (request) enable
     reg cpu_clk_en;
+    //latched enable (updates only when clk is low)
+    reg cpu_clk_en_lat;
 
-    // simple gated clock for simulation
-    wire cpu_clk = clk & cpu_clk_en;
+    always @(negedge clk or negedge resetn) begin
+        if (!resetn)
+            cpu_clk_en_lat <= 1'b1;     // start awake
+        else
+            cpu_clk_en_lat <= cpu_clk_en;
+    end
+
+    wire cpu_clk = clk & cpu_clk_en_lat;
+
     assign cpu_clk_o   = cpu_clk;
-    assign cpu_awake_o = cpu_clk_en;
+    assign cpu_awake_o = cpu_clk_en_lat;
 
     // PicoRV32 bus
     wire        mem_valid;
@@ -76,7 +85,7 @@ module soc_top #(
         .trap      (trap) 
     );
 
-    wire bus_valid = mem_valid && cpu_clk_en;
+    wire bus_valid = mem_valid && cpu_clk_en_lat;
     wire sram_sel = bus_valid && (mem_addr < 4*MEM_WORDS);
     wire mmio_sel = bus_valid && (mem_addr[31:24] == 8'h03);
 
@@ -180,7 +189,7 @@ module soc_top #(
         .mem_rdata  (pwr_rdata),
         .sleep_req_o(sleep_req),
         .wake_src_i (wake_sources),
-        .cpu_awake_i(cpu_clk_en)
+        .cpu_awake_i(cpu_clk_en_lat)
     );
 
     wire        test_ready;
@@ -217,75 +226,52 @@ module soc_top #(
     assign mem_ready = sram_ready | mmio_ready;
     assign mem_rdata = sram_ready ? sram_rdata : mmio_rdata;
 
-/*
-    // --------------------------------------
-    // Sleep / wake state machine (always-on)
-    // --------------------------------------
-    // Key rules:
-    // 1) Only go to sleep when firmware requests it *and* we have seen the CPU idle
-    //    (mem_valid == 0) at least once while awake.
-    // 2) Wake immediately on any wake_event.
-    // 3) After wake, clear cpu_idle_seen so we don't immediately re-sleep while firmware is still active.
-
-    reg cpu_idle_seen;
-    reg sleeping;
-
-    wire wake_event = |wake_sources;
-
-    always @(posedge clk) begin
-        if (!resetn) begin
-            cpu_clk_en    <= 1'b1;   // start awake
-            sleeping      <= 1'b0;
-            cpu_idle_seen <= 1'b0;
-        end 
-        else begin
-            // While awake, remember if we've ever seen an idle cycle.
-            // IMPORTANT: latch it (OR), don't overwrite it every cycle.
-            if (cpu_clk_en) begin
-                cpu_idle_seen <= cpu_idle_seen | (~mem_valid);
-            end
-
-            // Wake has highest priority (works even when cpu_clk_en=0)
-            if (sleeping) begin
-                if (wake_event) begin
-                    cpu_clk_en    <= 1'b1;
-                    sleeping      <= 1'b0;
-                    cpu_idle_seen <= 1'b0;  // force a fresh idle observation before sleeping again
-                end
-            end 
-            else begin
-                // AWAKE state
-                if (sleep_req && cpu_idle_seen && !wake_event) begin
-                    cpu_clk_en    <= 1'b0;
-                    sleeping      <= 1'b1;
-                    cpu_idle_seen <= 1'b0;  // reset for next time
-                end
-            end
-        end
-    end
-*/
-
 // --------------------------------------
 // Sleep / wake state machine (always-on)
 // --------------------------------------
 reg sleeping;
+reg cpu_idle_seen;
 
-wire wake_event = |wake_sources;
+reg [31:0] wake_sources_d;
+
+always @(posedge clk) begin
+  if (!resetn)
+    wake_sources_d <= 32'h0;
+  else
+    wake_sources_d <= wake_sources;
+end
+
+wire [31:0] wake_rise  = wake_sources & ~wake_sources_d;
+wire        wake_event = |wake_rise;   // 1-cycle pulse
+
 
 always @(posedge clk) begin
   if (!resetn) begin
-    cpu_clk_en <= 1'b1;
-    sleeping   <= 1'b0;
+    cpu_clk_en     <= 1'b1;  // start awake
+    sleeping       <= 1'b0;
+    cpu_idle_seen  <= 1'b0;
   end else begin
-    // Wake has priority
-    if (wake_event) begin
-      cpu_clk_en <= 1'b1;
-      sleeping   <= 1'b0;
+    // Track whether we've observed the CPU idle at least once while awake
+    if (cpu_clk_en) begin
+      cpu_idle_seen <= cpu_idle_seen | (~mem_valid);
+    end
+
+    // Wake has highest priority (works even when cpu_clk_en=0)
+    if (sleeping) begin
+      if (wake_event) begin
+        cpu_clk_en    <= 1'b1;
+        sleeping      <= 1'b0;
+        cpu_idle_seen <= 1'b0; // require a fresh idle observation before sleeping again
+      end
     end else begin
-      // Go to sleep immediately when requested
-      if (!sleeping && sleep_req) begin
-        cpu_clk_en <= 1'b0;
-        sleeping   <= 1'b1;
+      // Only sleep when:
+      //  - firmware requested it
+      //  - we've observed at least one idle cycle (prevents mid-transaction gating)
+      //  - no wake event pending
+      if (sleep_req && cpu_idle_seen && !wake_event) begin
+        cpu_clk_en    <= 1'b0;
+        sleeping      <= 1'b1;
+        cpu_idle_seen <= 1'b0;
       end
     end
   end
