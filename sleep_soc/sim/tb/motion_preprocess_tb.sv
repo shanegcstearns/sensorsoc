@@ -13,28 +13,20 @@ module motion_preprocess_tb;
   logic signed [AX_W-1:0] ax, ay, az;
 
   // config
-  logic [16:0] cfg_th_hi;
-  logic [16:0] cfg_th_lo;
-  logic [16:0] cfg_still_th;
-  logic [7:0]  cfg_debounce_n;
-  logic [15:0] cfg_epoch_len;
-  logic        cfg_epoch_external;
-  logic        epoch_end;
-  logic        cfg_energy_sq;
+  logic cfg_energy_sq;
+
+  // epoch control
+  logic epoch_end;
 
   // outputs
-  wire        motion_valid;
-  wire [15:0] motion_mag;
-  wire        burst_pulse;
-  wire        in_burst;
-  wire        stillness_flag;
-
-  wire        epoch_done;
+  wire  epoch_done;
   wire [47:0] motion_energy_epoch;
-  wire signed [48:0] motion_delta_epoch;
-  wire [15:0] burst_count_epoch;
-  wire [15:0] stillness_count_epoch;
-  wire [15:0] sample_count_epoch;
+
+  logic epoch_done_seen;
+  always @(posedge clk) begin
+    if (!resetn) epoch_done_seen <= 1'b0;
+    else if (epoch_done) epoch_done_seen <= 1'b1;
+  end
 
   motion_preprocess dut (
     .clk(clk),
@@ -46,27 +38,11 @@ module motion_preprocess_tb;
     .ay_i(ay),
     .az_i(az),
 
-    .cfg_th_hi_i(cfg_th_hi),
-    .cfg_th_lo_i(cfg_th_lo),
-    .cfg_still_th_i(cfg_still_th),
-    .cfg_debounce_n_i(cfg_debounce_n),
-    .cfg_epoch_len_i(cfg_epoch_len),
-    .cfg_epoch_external_i(cfg_epoch_external),
-    .epoch_end_i(epoch_end),
     .cfg_energy_sq_i(cfg_energy_sq),
-
-    .motion_valid_o(motion_valid),
-    .motion_mag_o(motion_mag),
-    .burst_pulse_o(burst_pulse),
-    .in_burst_o(in_burst),
-    .stillness_flag_o(stillness_flag),
+    .epoch_end_i(epoch_end),
 
     .epoch_done_o(epoch_done),
-    .motion_energy_epoch_o(motion_energy_epoch),
-    .motion_delta_epoch_o(motion_delta_epoch),
-    .burst_count_epoch_o(burst_count_epoch),
-    .stillness_count_epoch_o(stillness_count_epoch),
-    .sample_count_epoch_o(sample_count_epoch)
+    .motion_energy_epoch_o(motion_energy_epoch)
   );
 
   // 50 MHz
@@ -87,15 +63,6 @@ module motion_preprocess_tb;
     end
   endtask
 
-  task automatic do_reset();
-    begin
-      resetn = 0;
-      repeat (5) @(posedge clk);
-      resetn = 1;
-      repeat (2) @(posedge clk);
-    end
-  endtask
-
   task automatic pulse_epoch_end();
     begin
       @(negedge clk);
@@ -106,158 +73,57 @@ module motion_preprocess_tb;
     end
   endtask
 
-  int burst_pulses_seen;
-
-  always @(posedge clk) begin
-    if (!resetn) burst_pulses_seen <= 0;
-    else if (burst_pulse) burst_pulses_seen <= burst_pulses_seen + 1;
-  end
-
-  logic epoch_done_seen;
-  logic [47:0] cap_motion_energy_epoch;
-  logic [15:0] cap_burst_count_epoch;
-  logic [15:0] cap_stillness_count_epoch;
-  always @(posedge clk) begin
-    if (!resetn) begin
-      epoch_done_seen <= 1'b0;
-      cap_motion_energy_epoch <= '0;
-      cap_burst_count_epoch <= '0;
-      cap_stillness_count_epoch <= '0;
-    end else if (epoch_done) begin
-      epoch_done_seen <= 1'b1;
-      cap_motion_energy_epoch <= motion_energy_epoch;
-      cap_burst_count_epoch <= burst_count_epoch;
-      cap_stillness_count_epoch <= stillness_count_epoch;
+  task automatic do_reset();
+    begin
+      resetn = 0;
+      repeat (5) @(posedge clk);
+      resetn = 1;
+      repeat (2) @(posedge clk);
     end
-  end
+  endtask
 
   initial begin
-    bit still_seen;
     sample_valid = 0;
     sample_ok    = 0;
     ax = '0; ay = '0; az = '0;
-
-    cfg_th_hi       = 17'd1000;
-    cfg_th_lo       = 17'd500;
-    cfg_still_th    = 17'd50;
-    cfg_debounce_n  = 8'd2;
-    cfg_epoch_len   = 16'd16;
-    cfg_epoch_external = 1'b0;
+    cfg_energy_sq = 1'b0;
     epoch_end = 1'b0;
-    cfg_energy_sq   = 1'b0;
 
     do_reset();
 
-    // test 1: sample ok gating + mag/dyn/energy
-    cfg_energy_sq  = 1'b0;
-    cfg_epoch_len  = 16'd4;
-    cfg_th_hi      = 17'd2000;
-    cfg_th_lo      = 17'd1500;
-    cfg_still_th   = 17'd200;
-    cfg_debounce_n = 8'd2;
-    burst_pulses_seen = 0;
-    epoch_done_seen = 0;
-    send_sample(10, 0, 0, 1'b0);
-    if (motion_valid) $fatal(1, "sample_ok gating: motion_valid asserted with sample_ok=0");
-    send_sample(3, -4, 5, 1'b1); // prime
-    send_sample(0, 0, 0, 1'b1);  // check previous sample
-    if (!motion_valid) $fatal(1, "mag/dyn: motion_valid not asserted");
-    if (motion_mag !== 16'd12) $fatal(1, "mag mismatch: got=%0d exp=12", motion_mag);
-
-    // test 2: epoch_len=0 treated as 1
-    do_reset();
-    cfg_energy_sq  = 1'b0;
-    cfg_epoch_len  = 16'd0;
-    cfg_th_hi      = 17'd1000;
-    cfg_th_lo      = 17'd500;
-    cfg_still_th   = 17'd1;
-    cfg_debounce_n = 8'd2;
-    epoch_done_seen = 0;
-    send_sample(1, 0, 0, 1'b1);
-    if (!epoch_done) $fatal(1, "epoch_len=0: epoch_done not asserted");
-    if (sample_count_epoch != 16'd1) $fatal(1, "epoch_len=0: sample_count_epoch=%0d", sample_count_epoch);
-    if (motion_energy_epoch != 48'd0) $fatal(1, "epoch_len=0: motion_energy_epoch=%0d", motion_energy_epoch);
-
-    // test 3: energy_sq mode with epoch_len=1
-    do_reset();
-    cfg_energy_sq  = 1'b1;
-    cfg_epoch_len  = 16'd1;
-    cfg_th_hi      = 17'd1000;
-    cfg_th_lo      = 17'd500;
-    cfg_still_th   = 17'd1;
-    cfg_debounce_n = 8'd2;
-    send_sample(3, 0, 0, 1'b1); // prime
-    send_sample(4, 0, 0, 1'b1); // check energy for previous sample
-    if (!epoch_done) $fatal(1, "energy_sq: epoch_done not asserted");
-    if (motion_energy_epoch != 48'd9) $fatal(1, "energy_sq: motion_energy_epoch=%0d", motion_energy_epoch);
-
-    // test 4: debounce_n=0 treated as 1, burst enter/exit
-    do_reset();
-    cfg_energy_sq  = 1'b0;
-    cfg_epoch_len  = 16'd8;
-    cfg_th_hi      = 17'd10;
-    cfg_th_lo      = 17'd5;
-    cfg_still_th   = 17'd1;
-    cfg_debounce_n = 8'd0;
-    burst_pulses_seen = 0;
-    send_sample(20, 0, 0, 1'b1); // prime high
-    send_sample(0, 0, 0, 1'b1);  // should enter burst based on previous sample
-    if (!burst_pulse) $fatal(1, "debounce=0: burst_pulse not asserted");
-    if (!in_burst) $fatal(1, "debounce=0: in_burst not asserted");
-    send_sample(0, 0, 0, 1'b1);  // should exit burst based on previous low
-    if (in_burst) $fatal(1, "burst exit: in_burst not cleared");
-
-    // test 5: steady still: no bursts, energy about 0, stillness count == epoch_len
-    do_reset();
-    cfg_th_hi       = 17'd1000;
-    cfg_th_lo       = 17'd500;
-    cfg_still_th    = 17'd50;
-    cfg_debounce_n  = 8'd2;
-    cfg_epoch_len   = 16'd16;
-    cfg_energy_sq   = 1'b0;
-    burst_pulses_seen = 0;
-    epoch_done_seen = 0;
-    repeat (16) send_sample(0, 0, 0, 1'b1);
-    repeat (2) @(posedge clk);
-    if (burst_pulses_seen != 0) $fatal(1, "steady still: unexpected burst pulses=%0d", burst_pulses_seen);
-    if (!epoch_done_seen) $fatal(1, "steady still: did not observe epoch_done");
-    if (cap_burst_count_epoch != 0) $fatal(1, "steady still: burst_count_epoch=%0d", cap_burst_count_epoch);
-    if (cap_motion_energy_epoch != 0) $fatal(1, "steady still: motion_energy_epoch=%0d", cap_motion_energy_epoch);
-    if (cap_stillness_count_epoch != cfg_epoch_len) $fatal(1, "steady still: stillness_count_epoch=%0d", cap_stillness_count_epoch);
-
-    // test 6: single spike with higher debounce: should not enter burst
-    cfg_debounce_n = 8'd3;
-    burst_pulses_seen = 0;
-    send_sample(2000, 0, 0, 1'b1);
-    repeat (5) send_sample(0, 0, 0, 1'b1);
-    repeat (2) @(posedge clk);
-    if (burst_pulses_seen != 0) $fatal(1, "single spike: debounce failed, pulses=%0d", burst_pulses_seen);
-
-    // test 7: periodic movement: expect 2 bursts over short run
-    cfg_debounce_n = 8'd2;
-    cfg_th_hi      = 17'd1200;
-    cfg_th_lo      = 17'd600;
-    burst_pulses_seen = 0;
-    repeat (4) send_sample(0, 0, 0, 1'b1);
-    repeat (5) send_sample(1500, 0, 0, 1'b1); // enter + stay
-    repeat (4) send_sample(0, 0, 0, 1'b1);    // exit
-    repeat (3) send_sample(1500, 0, 0, 1'b1); // enter again
-    repeat (4) send_sample(0, 0, 0, 1'b1);
-    repeat (2) @(posedge clk);
-    if (burst_pulses_seen != 2) $fatal(1, "periodic: expected 2 burst pulses, got %0d", burst_pulses_seen);
-
-    // test 8: external epoch mode should finalize on epoch_end pulse (not sample count)
-    do_reset();
-    cfg_epoch_external = 1'b1;
-    cfg_epoch_len      = 16'd200; // ignored in external mode
-    cfg_energy_sq      = 1'b0;
-    epoch_done_seen    = 1'b0;
-    repeat (5) send_sample(10, 0, 0, 1'b1);
-    if (epoch_done) $fatal(1, "external epoch: unexpected epoch_done before pulse");
+    // test 1: accumulation with sample_ok gating
+    cfg_energy_sq = 1'b0; // linear energy
+    epoch_done_seen = 1'b0;
+    send_sample(3, -4, 5, 1'b1);  // mag=12
+    send_sample(1, 2, 3, 1'b1);   // mag=6
+    send_sample(10, 0, 0, 1'b0);  // ignored
     pulse_epoch_end();
     repeat (2) @(posedge clk);
-    if (!epoch_done_seen) $fatal(1, "external epoch: did not observe epoch_done after pulse");
-    if (sample_count_epoch != 16'd5) $fatal(1, "external epoch: sample_count_epoch=%0d exp=5", sample_count_epoch);
+    if (!epoch_done_seen) $fatal(1, "epoch_done not asserted");
+    if (motion_energy_epoch !== 48'd18) $fatal(1, "energy mismatch: got=%0d exp=18", motion_energy_epoch);
+
+    // test 2: energy_sq mode
+    do_reset();
+    cfg_energy_sq = 1'b1;
+    epoch_done_seen = 1'b0;
+    send_sample(2, 0, 0, 1'b1);   // mag=2 => 4
+    send_sample(3, 0, 0, 1'b1);   // mag=3 => 9
+    pulse_epoch_end();
+    repeat (2) @(posedge clk);
+    if (!epoch_done_seen) $fatal(1, "epoch_done not asserted (sq)");
+    if (motion_energy_epoch !== 48'd13) $fatal(1, "energy_sq mismatch: got=%0d exp=13", motion_energy_epoch);
+
+    // test 3: epoch_done is a clean strobe
+    do_reset();
+    cfg_energy_sq = 1'b0;
+    send_sample(1, 0, 0, 1'b1);
+    if (epoch_done) $fatal(1, "epoch_done asserted without pulse");
+    epoch_done_seen = 1'b0;
+    pulse_epoch_end();
+    repeat (2) @(posedge clk);
+    if (!epoch_done_seen) $fatal(1, "epoch_done missing after pulse");
+    repeat (2) @(posedge clk);
+    if (epoch_done) $fatal(1, "epoch_done not deasserted");
 
     $display("PASS");
     $finish;

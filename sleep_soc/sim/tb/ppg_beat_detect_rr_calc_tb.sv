@@ -36,20 +36,14 @@ module ppg_beat_detect_rr_calc_tb;
   logic [7:0]          cfg_q_min_accept;
 
   wire                 beat_pulse;
-  wire [T_W-1:0]       beat_time;
   wire                 rr_valid;
   wire                 rr_accepted;
   wire [T_W-1:0]       rr_interval;
-  wire [15:0]          hr_bpm;
   wire signed [16:0]   delta_hr_bpm;
   wire [7:0]           beat_quality;
   wire                 double_beat;
   wire                 missed_beat;
   wire                 ppg_invalid;
-  wire signed [23:0]   x_filt;
-  wire signed [23:0]   x_hp;
-  wire [23:0]          env;
-  wire [23:0]          thr;
 
   ppg_beat_detect_rr_calc #(
     .SAMPLE_W(SAMPLE_W),
@@ -82,20 +76,14 @@ module ppg_beat_detect_rr_calc_tb;
     .cfg_q_refrac_penalty_i(cfg_q_refrac_penalty),
     .cfg_q_min_accept_i(cfg_q_min_accept),
     .beat_pulse_o(beat_pulse),
-    .beat_time_o(beat_time),
     .rr_valid_o(rr_valid),
     .rr_accepted_o(rr_accepted),
     .rr_interval_o(rr_interval),
-    .hr_bpm_o(hr_bpm),
     .delta_hr_bpm_o(delta_hr_bpm),
     .beat_quality_o(beat_quality),
     .double_beat_o(double_beat),
     .missed_beat_o(missed_beat),
-    .ppg_invalid_o(ppg_invalid),
-    .x_filt_o(x_filt),
-    .x_hp_o(x_hp),
-    .env_o(env),
-    .thr_o(thr)
+    .ppg_invalid_o(ppg_invalid)
   );
 
   always #10 clk = ~clk;
@@ -149,7 +137,6 @@ module ppg_beat_detect_rr_calc_tb;
   int dbl_count;
   int miss_count;
   reg [T_W-1:0] last_rr;
-  reg [15:0] last_hr;
   reg signed [16:0] last_delta_hr;
 
   always @(posedge clk) begin
@@ -159,14 +146,12 @@ module ppg_beat_detect_rr_calc_tb;
       dbl_count <= 0;
       miss_count <= 0;
       last_rr <= 0;
-      last_hr <= 0;
       last_delta_hr <= 0;
     end else begin
       if (beat_pulse) beat_count <= beat_count + 1;
       if (rr_valid) begin
         rr_count <= rr_count + 1;
         last_rr <= rr_interval;
-        last_hr <= hr_bpm;
         last_delta_hr <= delta_hr_bpm;
       end
       if (double_beat) dbl_count <= dbl_count + 1;

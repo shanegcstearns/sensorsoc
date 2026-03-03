@@ -246,7 +246,7 @@ test-timer: $(TIMER_VVP)
 
 MOTION_PREPROCESS_TOP     := motion_preprocess_tb
 MOTION_PREPROCESS_VVP     := $(BUILD_DIR)/$(MOTION_PREPROCESS_TOP).vvp
-MOTION_PREPROCESS_SOURCES := sim/tb/motion_preprocess_tb.sv rtl/sensor_processing/motion_preprocess.sv rtl/sensor_processing/ewma_baseline.sv
+MOTION_PREPROCESS_SOURCES := sim/tb/motion_preprocess_tb.sv rtl/sensor_processing/motion_preprocess.sv
 MOTION_PREPROCESS_VCD     := $(WAVE_DIR)/motion_preprocess_tb.vcd
 
 $(MOTION_PREPROCESS_VVP): $(MOTION_PREPROCESS_SOURCES)

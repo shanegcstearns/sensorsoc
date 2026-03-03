@@ -41,22 +41,15 @@ module ppg_beat_detect_rr_calc #(
     input  wire [7:0]                   cfg_q_min_accept_i,
 
     output reg                          beat_pulse_o,
-    output reg  [T_W-1:0]               beat_time_o,
     output reg                          rr_valid_o,
     output reg                          rr_accepted_o,
     output reg  [T_W-1:0]               rr_interval_o,
-    output reg  [15:0]                  hr_bpm_o,
     output reg  signed [16:0]           delta_hr_bpm_o,
 
     output reg  [7:0]                   beat_quality_o,
     output reg                          double_beat_o,
     output reg                          missed_beat_o,
-    output reg                          ppg_invalid_o,
-
-    output reg  signed [X_W-1:0]        x_filt_o,
-    output reg  signed [X_W-1:0]        x_hp_o,
-    output reg  [ENV_W-1:0]             env_o,
-    output reg  [ENV_W-1:0]             thr_o
+    output reg                          ppg_invalid_o
 );
 
     localparam [COEFF_W-1:0] COEFF_ONE = ({{(COEFF_W-1){1'b0}}, 1'b1} << COEFF_FRAC);
@@ -147,11 +140,9 @@ module ppg_beat_detect_rr_calc #(
 
         if (!rst_ni) begin
             beat_pulse_o      <= 1'b0;
-            beat_time_o       <= {T_W{1'b0}};
             rr_valid_o        <= 1'b0;
             rr_accepted_o     <= 1'b0;
             rr_interval_o     <= {T_W{1'b0}};
-            hr_bpm_o          <= 16'd0;
             delta_hr_bpm_o    <= 17'sd0;
 
             beat_quality_o    <= 8'd0;
@@ -169,10 +160,6 @@ module ppg_beat_detect_rr_calc #(
             thr_d1_r          <= '0;
             t_d1_r            <= '0;
 
-            x_filt_o          <= '0;
-            x_hp_o            <= '0;
-            env_o             <= '0;
-            thr_o             <= '0;
 
             last_beat_time_r  <= {T_W{1'b0}};
             have_last_beat_r  <= 1'b0;
@@ -269,7 +256,7 @@ module ppg_beat_detect_rr_calc #(
                 flag_missed_v = 1'b0;
                 rr_should_pulse_v = 1'b0;
                 rr_v = beat_time_v - last_beat_time_r;
-                hr_bpm_new_v = hr_bpm_o;
+                hr_bpm_new_v = prev_hr_bpm_r;
                 delta_hr_v = 17'sd0;
 
                 if (cfg_enable_i && !cfg_bypass_i && candidate_v && !in_refrac_w && quality_ok_v) begin
@@ -296,7 +283,6 @@ module ppg_beat_detect_rr_calc #(
 
                 if (accept_v) begin
                     beat_pulse_o <= 1'b1;
-                    beat_time_o <= beat_time_v;
                     last_beat_time_r <= beat_time_v;
                     have_last_beat_r <= 1'b1;
                     ppg_invalid_o <= 1'b0;
@@ -308,7 +294,6 @@ module ppg_beat_detect_rr_calc #(
                     rr_interval_o <= rr_v;
                     if (rr_v != {T_W{1'b0}}) begin
                         hr_bpm_new_v = 16'(32'd60000 / rr_v); // TODO: ASSUMING TIMER IS IN MS
-                        hr_bpm_o <= hr_bpm_new_v;
                         if (have_prev_hr_r) begin
                             delta_hr_v = $signed({1'b0, hr_bpm_new_v}) - $signed({1'b0, prev_hr_bpm_r});
                         end else begin
@@ -335,10 +320,6 @@ module ppg_beat_detect_rr_calc #(
                 thr_d1_r <= thr_next_v;
                 t_d1_r <= t_now_w;
 
-                x_filt_o <= x_lp_next_v;
-                x_hp_o   <= x_hp_next_v;
-                env_o    <= env_next_v;
-                thr_o    <= thr_next_v;
             end
         end
     end
