@@ -132,7 +132,7 @@ df["hr_rmssd"] /= 0.05
 
 # clamp features to [-1, 1] to avoid outliers dominating training and to match quantization range
 for col in features:
-    df[col] = df[col].clip(-1.0, 1.0)
+    df[col] = df[col].clip(-8.0, 7.0)
 
 X = df[features].fillna(0).to_numpy()
 y = df["label"].to_numpy()
