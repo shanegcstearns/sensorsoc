@@ -67,7 +67,7 @@ module timer_mmio #(
     localparam [31:0] OFF_COUNT  = 32'h8;
     localparam [31:0] OFF_EVENT  = 32'hC;  // W1C bit0, read shows latched
 
-    // 4KB page decode (matches your other MMIOs)
+    // 4KB page decode (matches other MMIOs)
     wire        sel = mem_valid && (mem_addr[31:12] == BASE_ADDR[31:12]);
     wire [31:0] off = mem_addr - BASE_ADDR;
 
