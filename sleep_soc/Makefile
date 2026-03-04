@@ -12,6 +12,7 @@
 #   make firmware-sleepwake          # firmware from firmware/tests/test_sleepwake.c
 #   make firmware-gpio               # firmware from firmware/tests/test_gpio.c
 #   make firmware-sleepwake-periodic # firmware from firmware/tests/test_sleepwake_periodic.c
+#   make sim-reset-ctrl              # sv tb for reset controller
 #   make clean                       # remove build outputs
 #
 # NOTE:
@@ -240,6 +241,29 @@ test-timer: $(TIMER_VVP)
 	COCOTB_TEST_MODULES=$(TIMER_PYMOD) \
 	$(VVP) -M "$(COCOTB_LIBDIR)" -m libcocotbvpi_icarus $(TIMER_VVP)
 
+
+# ============================================================
+# RESET CONTROLLER TB (reset_ctrl_tb)
+# ============================================================
+
+RESET_CTRL_TOP     := reset_ctrl_tb
+RESET_CTRL_VVP     := $(BUILD_DIR)/$(RESET_CTRL_TOP).vvp
+RESET_CTRL_SOURCES := sim/tb/reset_ctrl_tb.sv rtl/reset_ctrl.v
+RESET_CTRL_VCD     := $(WAVE_DIR)/reset_ctrl.vcd
+
+$(RESET_CTRL_VVP): $(RESET_CTRL_SOURCES) | $(BUILD_DIR)
+	@echo "[SIM] Building $@"
+	$(IVERILOG) -g2012 -Wall -o $@ $^
+
+.PHONY: sim-reset-ctrl
+sim-reset-ctrl: $(RESET_CTRL_VVP)
+	@echo "== Running $(RESET_CTRL_TOP) (VCD -> $(RESET_CTRL_VCD)) =="
+	@mkdir -p $(WAVE_DIR)
+	@cd $(WAVE_DIR) && $(VVP) $(abspath $(RESET_CTRL_VVP))
+
+.PHONY: clean-reset-ctrl
+clean-reset-ctrl:
+	rm -f $(RESET_CTRL_VVP) $(RESET_CTRL_VCD)
 # ============================================================
 # MOTION PREPROCESS
 # ============================================================
