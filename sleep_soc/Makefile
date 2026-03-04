@@ -6,14 +6,28 @@
 #   - Simple firmware build (RISC-V GCC -> .elf/.bin/.hex)
 #
 # Usage:
-#   make sim-soc                     # compile + run tb_soc (reads firmware/build/firmware.hex)
-#   make test-mmio                   # cocotb for test_mmio
-#   make test-timer                  # cocotb for timer_mmio
-#   make firmware-sleepwake          # firmware from firmware/tests/test_sleepwake.c
-#   make firmware-gpio               # firmware from firmware/tests/test_gpio.c
-#   make firmware-sleepwake-periodic # firmware from firmware/tests/test_sleepwake_periodic.c
-#   make sim-reset-ctrl              # sv tb for reset controller
-#   make clean                       # remove build outputs
+#
+#   # Build firmware only (per variant)
+#   make firmware FW_VARIANT=test_sleepwake
+#   make firmware FW_VARIANT=test_gpio
+#   make firmware FW_VARIANT=test_sleepwake_periodic
+#   make firmware FW_VARIANT=main
+#
+#   # Compile + run SoC testbench with a chosen firmware variant
+#   make sim-soc                        # defaults to FW_VARIANT=test_sleepwake
+#   make sim-soc FW_VARIANT=test_gpio
+#   make sim-soc FW_VARIANT=test_sleepwake_periodic
+#   make sim-soc FW_VARIANT=main
+#
+#   # Unit tests
+#   make test-mmio
+#   make test-timer
+#
+#   # Standalone SV testbench
+#   make sim-reset-ctrl
+#
+#   # Cleanup
+#   make clean
 #
 # NOTE:
 #   This Makefile expects a small helper script at:
@@ -106,15 +120,6 @@ SOC_VVP      := sim_soc.vvp
 IRQ_TB_SRCS  := $(TB_DIR)/tb_irq.sv
 IRQ_VVP      := sim_irq.vvp
 
-# Per-firmware output paths
-FW_HEX_MAIN      := $(FW_DIR)/build/main/firmware.hex
-FW_HEX_SLEEPWAKE := $(FW_DIR)/build/test_sleepwake/firmware.hex
-
-# Keep generic names for targets that still use FW_SRC override pattern
-FW_HEX       := $(FW_BUILD)/firmware.hex
-FW_ELF       := $(FW_BUILD)/firmware.elf
-FW_BIN       := $(FW_BUILD)/firmware.bin
-
 # ----------------------------
 # Cocotb configuration helper
 # ----------------------------
@@ -132,21 +137,37 @@ define RUN_COCOTB_ICARUS
 endef
 
 # ----------------------------
-# Firmware build rules
+# Firmware build rules (per-variant output dirs)
 # ----------------------------
-# The canonical firmware for tb_soc is firmware/build/firmware.hex.
-# Choose which C file populates it by calling:
-#   make firmware-sleepwake
-#   make firmware-gpio
-#   make firmware-sleepwake-periodic
-#   make firmware-main         # builds firmware/main.c -> firmware/build/main/firmware.hex (used by sim-irq)
+# Produces:
+#   firmware/build/<variant>/firmware.{elf,bin,hex}
+#
+# Variants:
+#   main
+#   test_sleepwake
+#   test_gpio
+#   test_sleepwake_periodic
 
-FW_SRC ?= $(FW_TESTS)/test_sleepwake.c
+FW_VARIANT ?= test_sleepwake
 
-.PHONY: firmware
-firmware: $(FW_HEX)
+# Variant sources
+FW_C_main                  := $(FW_DIR)/main.c
+FW_C_test_sleepwake         := $(FW_TESTS)/test_sleepwake.c
+FW_C_test_gpio              := $(FW_TESTS)/test_gpio.c
+FW_C_test_sleepwake_periodic:= $(FW_TESTS)/test_sleepwake_periodic.c
 
-$(FW_HEX): $(FW_DIR)/start.S $(FW_DIR)/linker.ld $(FW_SRC) $(BIN2HEX_PY) | $(FW_BUILD)
+# Select the C source based on FW_VARIANT
+FW_SRC = $(FW_C_$(FW_VARIANT))
+
+# Per-variant output paths
+FW_OUTDIR := $(FW_DIR)/build/$(FW_VARIANT)
+FW_ELF    := $(FW_OUTDIR)/firmware.elf
+FW_BIN    := $(FW_OUTDIR)/firmware.bin
+FW_HEX    := $(FW_OUTDIR)/firmware.hex
+
+# Build rule
+$(FW_HEX): $(FW_DIR)/start.S $(FW_DIR)/linker.ld $(FW_SRC) $(BIN2HEX_PY)
+	@mkdir -p $(FW_OUTDIR)
 	@echo "[FW] Building $(FW_SRC) -> $(FW_HEX)"
 	$(RISCV_GCC) \
 	  -march=rv32imc -mabi=ilp32 \
@@ -159,42 +180,24 @@ $(FW_HEX): $(FW_DIR)/start.S $(FW_DIR)/linker.ld $(FW_SRC) $(BIN2HEX_PY) | $(FW_
 	@echo "[FW] Converting $(FW_BIN) -> $(FW_HEX) (32-bit little-endian words)"
 	@$(PYTHON) $(BIN2HEX_PY) $(FW_BIN) $(FW_HEX)
 
-.PHONY: firmware-sleepwake firmware-gpio firmware-sleepwake-periodic firmware-main
+.PHONY: firmware firmware-main firmware-sleepwake firmware-gpio firmware-sleepwake-periodic
 
-$(FW_HEX_MAIN): $(FW_DIR)/start.S $(FW_DIR)/linker.ld $(FW_DIR)/main.c $(BIN2HEX_PY)
-	@mkdir -p $(dir $@)
-	@echo "[FW] Building firmware/main.c -> $@"
-	$(RISCV_GCC) \
-	  -march=rv32imc -mabi=ilp32 \
-	  -nostdlib -ffreestanding -O2 \
-	  -Wl,-T,$(FW_DIR)/linker.ld \
-	  -o $(FW_DIR)/build/main/firmware.elf \
-	  $(FW_DIR)/start.S \
-	  $(FW_DIR)/main.c
-	$(RISCV_OBJCOPY) -O binary $(FW_DIR)/build/main/firmware.elf $(FW_DIR)/build/main/firmware.bin
-	@$(PYTHON) $(BIN2HEX_PY) $(FW_DIR)/build/main/firmware.bin $@
+# Generic "firmware" builds whatever FW_VARIANT is set to
+firmware: $(FW_HEX)
 
-$(FW_HEX_SLEEPWAKE): $(FW_DIR)/start.S $(FW_DIR)/linker.ld $(FW_TESTS)/test_sleepwake.c $(BIN2HEX_PY)
-	@mkdir -p $(dir $@)
-	@echo "[FW] Building firmware/tests/test_sleepwake.c -> $@"
-	$(RISCV_GCC) \
-	  -march=rv32imc -mabi=ilp32 \
-	  -nostdlib -ffreestanding -O2 \
-	  -Wl,-T,$(FW_DIR)/linker.ld \
-	  -o $(FW_DIR)/build/test_sleepwake/firmware.elf \
-	  $(FW_DIR)/start.S \
-	  $(FW_TESTS)/test_sleepwake.c
-	$(RISCV_OBJCOPY) -O binary $(FW_DIR)/build/test_sleepwake/firmware.elf $(FW_DIR)/build/test_sleepwake/firmware.bin
-	@$(PYTHON) $(BIN2HEX_PY) $(FW_DIR)/build/test_sleepwake/firmware.bin $@
+firmware-main:
+	@$(MAKE) FW_VARIANT=main firmware
 
-firmware-main: $(FW_HEX_MAIN)
-firmware-sleepwake: $(FW_HEX_SLEEPWAKE)
+firmware-sleepwake:
+	@$(MAKE) FW_VARIANT=test_sleepwake firmware
 
 firmware-gpio:
-	@$(MAKE) FW_SRC=$(FW_TESTS)/test_gpio.c firmware
+	@$(MAKE) FW_VARIANT=test_gpio firmware
 
 firmware-sleepwake-periodic:
-	@$(MAKE) FW_SRC=$(FW_TESTS)/test_sleepwake_periodic.c firmware
+	@$(MAKE) FW_VARIANT=test_sleepwake_periodic firmware
+
+
 
 # ----------------------------
 # SoC simulation (SystemVerilog tb)
@@ -203,16 +206,19 @@ firmware-sleepwake-periodic:
 build-soc: $(SOC_VVP)
 
 $(SOC_VVP): $(SOC_TB_SRCS) $(SOC_RTL_SRCS)
-	@echo "[SIM] Building $@"
+	@echo "[SIM] Building $@ (FW=$(FW_HEX))"
 	$(IVERILOG) -g2012 -s tb_soc -o $@ \
+	  -P tb_soc.FW=\"$(FW_HEX)\" \
 	  $(SOC_TB_SRCS) \
 	  $(SOC_RTL_SRCS)
 
-# Run tb_soc. Builds test_sleepwake firmware into its own directory.
-sim-soc: $(SOC_VVP) $(FW_HEX_SLEEPWAKE) | $(SIM_BUILD)
-	@echo "[SIM] Running tb_soc (will read $(FW_HEX_SLEEPWAKE))"
+# Run tb_soc. Uses FW_VARIANT to choose which firmware hex is built/loaded.
+# Example:
+#   make sim-soc FW_VARIANT=test_gpio
+#   make sim-soc FW_VARIANT=test_sleepwake_periodic
+sim-soc: $(SOC_VVP) firmware | $(SIM_BUILD)
+	@echo "[SIM] Running tb_soc (FW=$(FW_HEX))"
 	$(VVP) $(SOC_VVP)
-
 # ----------------------------
 # IRQ testbench (tb_irq)
 # ----------------------------
