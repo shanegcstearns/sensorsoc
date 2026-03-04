@@ -120,15 +120,6 @@ SOC_VVP      := sim_soc.vvp
 IRQ_TB_SRCS  := $(TB_DIR)/tb_irq.sv
 IRQ_VVP      := sim_irq.vvp
 
-# Per-firmware output paths
-#FW_HEX_MAIN      := $(FW_DIR)/build/main/firmware.hex
-#FW_HEX_SLEEPWAKE := $(FW_DIR)/build/test_sleepwake/firmware.hex
-
-# Keep generic names for targets that still use FW_SRC override pattern
-#FW_HEX       := $(FW_BUILD)/firmware.hex
-#FW_ELF       := $(FW_BUILD)/firmware.elf
-#FW_BIN       := $(FW_BUILD)/firmware.bin
-
 # ----------------------------
 # Cocotb configuration helper
 # ----------------------------
@@ -144,16 +135,6 @@ export PYTHONPATH := $(abspath $(TB_DIR))
 define RUN_COCOTB_ICARUS
 	$(VVP) -M "$(COCOTB_LIBDIR)" -m libcocotbvpi_icarus $1
 endef
-
-# ----------------------------
-# Firmware build rules
-# ----------------------------
-# The canonical firmware for tb_soc is firmware/build/firmware.hex.
-# Choose which C file populates it by calling:
-#   make firmware-sleepwake
-#   make firmware-gpio
-#   make firmware-sleepwake-periodic
-#   make firmware-main         # builds firmware/main.c -> firmware/build/main/firmware.hex (used by sim-irq)
 
 # ----------------------------
 # Firmware build rules (per-variant output dirs)
