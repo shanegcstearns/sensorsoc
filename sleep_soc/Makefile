@@ -282,6 +282,13 @@ test-timer: $(TIMER_VVP)
 	COCOTB_TEST_MODULES=$(TIMER_PYMOD) \
 	$(VVP) -M "$(COCOTB_LIBDIR)" -m libcocotbvpi_icarus $(TIMER_VVP)
 
+# ============================================================
+# Cocotb: ML test 
+# ============================================================
+
+.PHONY: test-ml
+test-ml:
+	$(MAKE) -C sim/tb/ml
 
 # ============================================================
 # RESET CONTROLLER TB (reset_ctrl_tb)
