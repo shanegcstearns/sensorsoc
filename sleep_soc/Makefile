@@ -97,14 +97,20 @@ SOC_RTL_SRCS := \
   $(RTL_DIR)/timer_mmio.v \
   $(RTL_DIR)/ml_stub_mmio.v \
   $(RTL_DIR)/irq_ctrl_mmio.v \
-  $(RTL_DIR)/pwrctrl_mmio.v
+  $(RTL_DIR)/pwrctrl_mmio.v \
+  $(RTL_DIR)/host_i2c_target.sv \
+  $(RTL_DIR)/host_i2c_bridge_regs.sv
 
 SOC_TB_SRCS  := $(TB_DIR)/tb_soc.sv
 SOC_VVP      := sim_soc.vvp
 IRQ_TB_SRCS  := $(TB_DIR)/tb_irq.sv
 IRQ_VVP      := sim_irq.vvp
 
-# Default firmware outputs used by soc_top
+# Per-firmware output paths
+FW_HEX_MAIN      := $(FW_DIR)/build/main/firmware.hex
+FW_HEX_SLEEPWAKE := $(FW_DIR)/build/test_sleepwake/firmware.hex
+
+# Keep generic names for targets that still use FW_SRC override pattern
 FW_HEX       := $(FW_BUILD)/firmware.hex
 FW_ELF       := $(FW_BUILD)/firmware.elf
 FW_BIN       := $(FW_BUILD)/firmware.bin
@@ -133,6 +139,7 @@ endef
 #   make firmware-sleepwake
 #   make firmware-gpio
 #   make firmware-sleepwake-periodic
+#   make firmware-main         # builds firmware/main.c -> firmware/build/main/firmware.hex (used by sim-irq)
 
 FW_SRC ?= $(FW_TESTS)/test_sleepwake.c
 
@@ -152,9 +159,36 @@ $(FW_HEX): $(FW_DIR)/start.S $(FW_DIR)/linker.ld $(FW_SRC) $(BIN2HEX_PY) | $(FW_
 	@echo "[FW] Converting $(FW_BIN) -> $(FW_HEX) (32-bit little-endian words)"
 	@$(PYTHON) $(BIN2HEX_PY) $(FW_BIN) $(FW_HEX)
 
-.PHONY: firmware-sleepwake firmware-gpio firmware-sleepwake-periodic
-firmware-sleepwake:
-	@$(MAKE) FW_SRC=$(FW_TESTS)/test_sleepwake.c firmware
+.PHONY: firmware-sleepwake firmware-gpio firmware-sleepwake-periodic firmware-main
+
+$(FW_HEX_MAIN): $(FW_DIR)/start.S $(FW_DIR)/linker.ld $(FW_DIR)/main.c $(BIN2HEX_PY)
+	@mkdir -p $(dir $@)
+	@echo "[FW] Building firmware/main.c -> $@"
+	$(RISCV_GCC) \
+	  -march=rv32imc -mabi=ilp32 \
+	  -nostdlib -ffreestanding -O2 \
+	  -Wl,-T,$(FW_DIR)/linker.ld \
+	  -o $(FW_DIR)/build/main/firmware.elf \
+	  $(FW_DIR)/start.S \
+	  $(FW_DIR)/main.c
+	$(RISCV_OBJCOPY) -O binary $(FW_DIR)/build/main/firmware.elf $(FW_DIR)/build/main/firmware.bin
+	@$(PYTHON) $(BIN2HEX_PY) $(FW_DIR)/build/main/firmware.bin $@
+
+$(FW_HEX_SLEEPWAKE): $(FW_DIR)/start.S $(FW_DIR)/linker.ld $(FW_TESTS)/test_sleepwake.c $(BIN2HEX_PY)
+	@mkdir -p $(dir $@)
+	@echo "[FW] Building firmware/tests/test_sleepwake.c -> $@"
+	$(RISCV_GCC) \
+	  -march=rv32imc -mabi=ilp32 \
+	  -nostdlib -ffreestanding -O2 \
+	  -Wl,-T,$(FW_DIR)/linker.ld \
+	  -o $(FW_DIR)/build/test_sleepwake/firmware.elf \
+	  $(FW_DIR)/start.S \
+	  $(FW_TESTS)/test_sleepwake.c
+	$(RISCV_OBJCOPY) -O binary $(FW_DIR)/build/test_sleepwake/firmware.elf $(FW_DIR)/build/test_sleepwake/firmware.bin
+	@$(PYTHON) $(BIN2HEX_PY) $(FW_DIR)/build/test_sleepwake/firmware.bin $@
+
+firmware-main: $(FW_HEX_MAIN)
+firmware-sleepwake: $(FW_HEX_SLEEPWAKE)
 
 firmware-gpio:
 	@$(MAKE) FW_SRC=$(FW_TESTS)/test_gpio.c firmware
@@ -174,9 +208,9 @@ $(SOC_VVP): $(SOC_TB_SRCS) $(SOC_RTL_SRCS)
 	  $(SOC_TB_SRCS) \
 	  $(SOC_RTL_SRCS)
 
-# Run tb_soc. Expects firmware/build/firmware.hex to exist.
-sim-soc: $(SOC_VVP) $(FW_HEX) | $(SIM_BUILD)
-	@echo "[SIM] Running tb_soc (will read $(FW_HEX))"
+# Run tb_soc. Builds test_sleepwake firmware into its own directory.
+sim-soc: $(SOC_VVP) $(FW_HEX_SLEEPWAKE) | $(SIM_BUILD)
+	@echo "[SIM] Running tb_soc (will read $(FW_HEX_SLEEPWAKE))"
 	$(VVP) $(SOC_VVP)
 
 # ----------------------------
@@ -191,8 +225,8 @@ $(IRQ_VVP): $(IRQ_TB_SRCS) $(SOC_RTL_SRCS)
 	  $(IRQ_TB_SRCS) \
 	  $(SOC_RTL_SRCS)
 
-sim-irq: $(IRQ_VVP) $(FW_HEX) | $(SIM_BUILD)
-	@echo "[SIM] Running tb_irq (will read $(FW_HEX))"
+sim-irq: $(IRQ_VVP) $(FW_HEX_MAIN) | $(SIM_BUILD)
+	@echo "[SIM] Running tb_irq (will read $(FW_HEX_MAIN))"
 	$(VVP) $(IRQ_VVP)
 
 # ----------------------------
@@ -390,6 +424,43 @@ sim-cos-lut-timer: $(COS_LUT_TIMER_VVP)
 	@echo "== Running $(COS_LUT_TIMER_TOP) (VCD -> $(COS_LUT_TIMER_VCD)) =="
 	@mkdir -p $(WAVE_DIR)
 	@cd $(WAVE_DIR) && $(VVP) $(abspath $(COS_LUT_TIMER_VVP))
+
+# ============================================================
+# HOST I2C TARGET
+# ============================================================
+
+HOST_I2C_TARGET_TOP     := tb_host_i2c_target
+HOST_I2C_TARGET_VVP     := $(BUILD_DIR)/$(HOST_I2C_TARGET_TOP).vvp
+HOST_I2C_TARGET_SOURCES := sim/tb/tb_host_i2c_target.sv \
+                           rtl/host_i2c_target.sv \
+                           rtl/host_i2c_bridge_regs.sv
+
+$(HOST_I2C_TARGET_VVP): $(HOST_I2C_TARGET_SOURCES)
+	$(IVERILOG) -g2012 -s $(HOST_I2C_TARGET_TOP) -o $@ $^
+
+.PHONY: sim-host-i2c-target
+sim-host-i2c-target: $(HOST_I2C_TARGET_VVP)
+	@echo "== Running $(HOST_I2C_TARGET_TOP) =="
+	$(VVP) $(HOST_I2C_TARGET_VVP)
+
+# ============================================================
+# SOC HOST I2C IRQ
+# ============================================================
+
+SOC_I2C_IRQ_TOP     := tb_soc_host_i2c_irq
+SOC_I2C_IRQ_VVP     := $(BUILD_DIR)/$(SOC_I2C_IRQ_TOP).vvp
+SOC_I2C_IRQ_SOURCES := sim/tb/tb_soc_host_i2c_irq.sv \
+                       $(SOC_RTL_SRCS) \
+                       rtl/host_i2c_target.sv \
+                       rtl/host_i2c_bridge_regs.sv
+
+$(SOC_I2C_IRQ_VVP): $(SOC_I2C_IRQ_SOURCES)
+	$(IVERILOG) -g2012 -s $(SOC_I2C_IRQ_TOP) -o $@ $^
+
+.PHONY: sim-soc-host-i2c-irq
+sim-soc-host-i2c-irq: $(SOC_I2C_IRQ_VVP)
+	@echo "== Running $(SOC_I2C_IRQ_TOP) =="
+	$(VVP) $(SOC_I2C_IRQ_VVP)
 
 # ============================================================
 # Cleanup

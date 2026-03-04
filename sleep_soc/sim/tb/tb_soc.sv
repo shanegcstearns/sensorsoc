@@ -2,7 +2,7 @@
 
 module tb_soc;
 
-  localparam string FW = "firmware/build/firmware.hex";
+  localparam string FW = "firmware/build/test_sleepwake/firmware.hex";
 
   // Optional: page constants for runtime filtering (NOT hierarchical)
   localparam logic [31:12] TIMER_PAGE = 20'h03002;
@@ -16,12 +16,17 @@ module tb_soc;
   wire cpu_clk_o, cpu_awake_o;
 
   // DUT
+  wire i2c_sda;
+  assign i2c_sda = 1'bz;
+
   soc_top #(
     .MEM_WORDS(1024),
     .FIRMWARE_HEX(FW)
   ) dut (
     .clk(clk),
     .resetn(resetn),
+    .i2c_scl_i(1'b1),
+    .i2c_sda_io(i2c_sda),
     .gpio_out(gpio_out),
     .cpu_clk_o(cpu_clk_o),
     .cpu_awake_o(cpu_awake_o)

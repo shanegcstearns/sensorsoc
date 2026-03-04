@@ -19,7 +19,7 @@
 
 module tb_irq;
 
-  localparam string FW = "firmware/build/firmware.hex";
+  localparam string FW = "firmware/build/main/firmware.hex";
 
   logic clk    = 0;
   logic resetn = 0;
@@ -27,12 +27,17 @@ module tb_irq;
   wire [7:0] gpio_out;
   wire       cpu_clk_o, cpu_awake_o;
 
+  wire i2c_sda;
+  assign i2c_sda = 1'bz;
+
   soc_top #(
     .MEM_WORDS   (1024),
     .FIRMWARE_HEX(FW)
   ) dut (
     .clk        (clk),
     .resetn     (resetn),
+    .i2c_scl_i  (1'b1),
+    .i2c_sda_io (i2c_sda),
     .gpio_out   (gpio_out),
     .cpu_clk_o  (cpu_clk_o),
     .cpu_awake_o(cpu_awake_o)

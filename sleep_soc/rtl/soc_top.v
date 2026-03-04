@@ -20,6 +20,10 @@ module soc_top #(
 
     output wire [7:0]  gpio_out,   // good for LEDs in FPGA later
 
+    // Host I2C target interface
+    input  wire        i2c_scl_i,
+    inout  wire        i2c_sda_io,
+
     // optional: expose for waveform/debug
     output wire        cpu_clk_o,
     output wire        cpu_awake_o
@@ -170,11 +174,41 @@ module soc_top #(
         .score_o  (ml_score)
     );
 
+    // Host I2C target + bridge registers
+    wire       i2c_wr_en, i2c_proto_err;
+    wire [7:0] i2c_wr_addr, i2c_wr_data, i2c_rd_addr, i2c_rd_data;
+    wire       host_i2c_irq_event;
+
+    host_i2c_target #(.SLAVE_ADDR(7'h42)) u_i2c_target (
+        .clk        (clk),
+        .resetn     (resetn),
+        .i2c_scl_i  (i2c_scl_i),
+        .i2c_sda_io (i2c_sda_io),
+        .wr_en_o    (i2c_wr_en),
+        .wr_addr_o  (i2c_wr_addr),
+        .wr_data_o  (i2c_wr_data),
+        .rd_addr_o  (i2c_rd_addr),
+        .rd_data_i  (i2c_rd_data),
+        .proto_err_o(i2c_proto_err)
+    );
+
+    host_i2c_bridge_regs u_i2c_bridge (
+        .clk        (clk),
+        .resetn     (resetn),
+        .wr_en_i    (i2c_wr_en),
+        .wr_addr_i  (i2c_wr_addr),
+        .wr_data_i  (i2c_wr_data),
+        .rd_addr_i  (i2c_rd_addr),
+        .rd_data_o  (i2c_rd_data),
+        .proto_err_i(i2c_proto_err),
+        .event_o    (host_i2c_irq_event)
+    );
+
     // IRQ controller: pending/mask/wake filtering + MMIO visibility.
     wire        irqc_ready;
     wire [31:0] irqc_rdata;
     wire        irqc_wake_req;
-    wire [31:0] irq_sources = {30'b0, ml_event, timer_event};
+    wire [31:0] irq_sources = {29'b0, host_i2c_irq_event, ml_event, timer_event};
 
     irq_ctrl_mmio #(.BASE_ADDR(IRQC_BASE)) u_irqc (
         .clk      (clk),
