@@ -7,7 +7,7 @@ module feature_engine (
 
     // Time feature inputs
     input  wire                     seconds_valid_i,
-    input  wire [15:0]              cos_time_feat_o,
+    input  wire [15:0]              cos_time_feat_i,
 
     // motion
     input wire                     motion_valid_i,
@@ -42,7 +42,7 @@ module feature_engine (
             feat_valid_o <= 1'b0;
 
             // capture latest features when their valid strobes fire
-            if (seconds_valid_i) time_feat_o <= cos_time_feat_o;
+            if (seconds_valid_i) time_feat_o <= cos_time_feat_i;
             if (motion_valid_i)  motion_feat_o <= motion_energy_epoch_i;
             if (delta_hr_valid_i) delta_hr_feat_o <= delta_hr_i;
             if (rmssd_valid_i)   rmssd_feat_o <= rmssd_i;
