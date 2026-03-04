@@ -1,8 +1,12 @@
 `timescale 1ns/1ps
 
-module tb_soc;
+module tb_soc #(
+  parameter string FW = "firmware/build/test_sleepwake/firmware.hex"
+);
 
-  localparam string FW = "firmware/build/test_sleepwake/firmware.hex";
+  initial begin
+    $display("[TB] Firmware file (parameter) = %s", FW);
+  end
 
   // Optional: page constants for runtime filtering (NOT hierarchical)
   localparam logic [31:12] TIMER_PAGE = 20'h03002;
