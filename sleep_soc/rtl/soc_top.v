@@ -162,7 +162,7 @@ module soc_top #(
   wire        ml_event;
   wire [31:0] ml_score;
 
-  // AXI-Lite wires between bridge and mlp_wrap
+  // AXI-Lite wires between bridge and taketwo_wrap
   wire [31:0] ml_saxi_awaddr, ml_saxi_wdata, ml_saxi_araddr;
   wire [2:0]  ml_saxi_awprot, ml_saxi_arprot;
   wire        ml_saxi_awvalid, ml_saxi_awready;
@@ -233,7 +233,7 @@ wire [1:0]  maxi_rresp   = 2'b00;
 wire        maxi_rlast   = 1'b0;
 wire        maxi_rvalid  = 1'b0;
 
-wlp_wrap u_wlp (
+taketwo_wrap u_taketwo (
   .CLK   (clk),
   .RESETN(resetn),
   .irq   (ml_irq),
