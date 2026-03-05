@@ -574,6 +574,29 @@ sim-logit-confidence: $(LOGIT_TO_CONF_VVP)
 	@echo "== Running $(LOGIT_TO_CONF_TOP) (VCD -> $(LOGIT_TO_CONF_VCD)) =="
 	@mkdir -p $(WAVE_DIR)
 	@cd $(WAVE_DIR) && $(VVP) $(abspath $(LOGIT_TO_CONF_VVP))
+
+# ============================================================
+# SENSOR PIPELINE (i2c_master + slave models + tb_sensor_pipeline)
+# ============================================================
+
+SENSOR_PIPELINE_TOP     := tb_sensor_pipeline
+SENSOR_PIPELINE_VVP     := $(BUILD_DIR)/$(SENSOR_PIPELINE_TOP).vvp
+SENSOR_PIPELINE_SOURCES := sim/tb/tb_sensor_pipeline.sv \
+                           rtl/i2c_master.sv \
+                           rtl/accel_reader.sv \
+                           rtl/ppg_fifo_reader.sv \
+                           rtl/motion_preprocess.sv \
+                           rtl/globaltimer.sv \
+                           sim/sensors/i2c_slave_lis2dw12.sv \
+                           sim/sensors/i2c_slave_adpd144ri.sv
+SENSOR_PIPELINE_VCD     := $(WAVE_DIR)/sensor_pipeline.vcd
+
+$(SENSOR_PIPELINE_VVP): $(SENSOR_PIPELINE_SOURCES) | $(BUILD_DIR)
+	$(IVERILOG) -g2012 -o $@ $^
+
+.PHONY: sim-sensor-pipeline
+sim-sensor-pipeline: $(SENSOR_PIPELINE_VVP)
+	$(VVP) $(SENSOR_PIPELINE_VVP)
 	
 # ============================================================
 # Cleanup
