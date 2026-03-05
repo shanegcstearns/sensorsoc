@@ -25,6 +25,7 @@
 #
 #   # Standalone SV testbench
 #   make sim-reset-ctrl
+#   make sim-globaltimer
 #
 #   # Cleanup
 #   make clean
@@ -476,6 +477,24 @@ $(SOC_I2C_IRQ_VVP): $(SOC_I2C_IRQ_SOURCES)
 sim-soc-host-i2c-irq: $(SOC_I2C_IRQ_VVP)
 	@echo "== Running $(SOC_I2C_IRQ_TOP) =="
 	$(VVP) $(SOC_I2C_IRQ_VVP)
+
+# ============================================================
+# GLOBAL TIMER
+# ============================================================
+
+GLOBALTIMER_TOP     := globaltimer_tb
+GLOBALTIMER_VVP     := $(BUILD_DIR)/$(GLOBALTIMER_TOP).vvp
+GLOBALTIMER_SOURCES := sim/tb/globaltimer_tb.sv rtl/globaltimer.sv
+GLOBALTIMER_VCD     := $(WAVE_DIR)/globaltimer_tb.vcd
+
+$(GLOBALTIMER_VVP): $(GLOBALTIMER_SOURCES)
+	$(IVERILOG) -g2012 -o $@ $^
+
+.PHONY: sim-globaltimer
+sim-globaltimer: $(GLOBALTIMER_VVP)
+	@echo "== Running $(GLOBALTIMER_TOP) (VCD -> $(GLOBALTIMER_VCD)) =="
+	@mkdir -p $(WAVE_DIR)
+	@cd $(WAVE_DIR) && $(VVP) $(abspath $(GLOBALTIMER_VVP))
 
 # ============================================================
 # Cleanup
