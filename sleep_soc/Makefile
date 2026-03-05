@@ -443,6 +443,38 @@ sim-cos-lut-timer: $(COS_LUT_TIMER_VVP)
 	@cd $(WAVE_DIR) && $(VVP) $(abspath $(COS_LUT_TIMER_VVP))
 
 # ============================================================
+# TOP SENSOR PIPELINE
+# ============================================================
+
+TOP_PIPELINE_TOP     := top_pipeline_tb
+TOP_PIPELINE_VVP     := $(BUILD_DIR)/$(TOP_PIPELINE_TOP).vvp
+TOP_PIPELINE_SOURCES := sim/tb/top_pipeline_tb.sv \
+                        rtl/top.sv \
+                        rtl/i2c_master.sv \
+                        rtl/accel_reader.sv \
+                        rtl/motion_preprocess.sv \
+                        rtl/ppg_fifo_reader.sv \
+                        rtl/ppg_beat_detect_rr_calc.sv \
+                        rtl/rmssd_engine.sv \
+                        rtl/signal_quality.sv \
+                        rtl/feature_engine.sv \
+                        rtl/cos_lut_timer.sv \
+                        rtl/globaltimer.sv \
+                        sim/sensors/i2c_slave_lis2dw12.sv \
+                        sim/sensors/i2c_slave_adpd144ri.sv
+TOP_PIPELINE_VCD     := $(WAVE_DIR)/top_pipeline_tb.vcd
+
+$(TOP_PIPELINE_VVP): $(TOP_PIPELINE_SOURCES)
+	$(IVERILOG) -g2012 -o $@ $^
+
+.PHONY: sim-top-pipeline
+sim-top-pipeline: $(TOP_PIPELINE_VVP)
+	@echo "== Running $(TOP_PIPELINE_TOP) (VCD -> $(TOP_PIPELINE_VCD)) =="
+	@mkdir -p $(WAVE_DIR)
+	@cd $(WAVE_DIR) && $(VVP) $(abspath $(TOP_PIPELINE_VVP))
+
+
+# ============================================================
 # HOST I2C TARGET
 # ============================================================
 

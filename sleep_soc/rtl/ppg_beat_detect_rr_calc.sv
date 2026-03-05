@@ -63,6 +63,7 @@ module ppg_beat_detect_rr_calc #(
     logic            have_last_beat_r;
     logic  [15:0]    prev_hr_bpm_r;
     logic            have_prev_hr_r;
+    logic            have_init_r;
 
     function automatic signed [X_W-1:0] sample_to_signed;
         input [SAMPLE_W-1:0] s;
@@ -166,6 +167,7 @@ module ppg_beat_detect_rr_calc #(
             have_last_beat_r  <= 1'b0;
             prev_hr_bpm_r     <= 16'd0;
             have_prev_hr_r    <= 1'b0;
+            have_init_r       <= 1'b0;
         end else begin
             beat_pulse_o   <= 1'b0;
             rr_valid_o     <= 1'b0;
@@ -175,12 +177,28 @@ module ppg_beat_detect_rr_calc #(
 
             if (!cfg_enable_i || cfg_bypass_i) begin
                 ppg_invalid_o <= 1'b0;
+                have_init_r <= 1'b0;
             end else if (have_last_beat_r && (elapsed_since_last_w > cfg_rr_max_ticks_i)) begin
                 ppg_invalid_o <= 1'b1;
             end
 
             if (ppg_valid_i) begin
                 x_raw_v = sample_to_signed(ppg_sample_i, cfg_signed_i);
+                if (!have_init_r) begin
+                    // Seed filters to first sample to avoid large startup transients
+                    // that can keep threshold too high for a long time.
+                    x_lp_r <= x_raw_v;
+                    x_base_r <= x_raw_v;
+                    x_hp_r <= '0;
+                    env_r <= '0;
+                    thr_r <= cfg_thr_min_i;
+                    xhp_d2_r <= '0;
+                    xhp_d1_r <= '0;
+                    thr_d1_r <= cfg_thr_min_i;
+                    t_d1_r <= t_now_w;
+                    beat_quality_o <= 8'd0;
+                    have_init_r <= 1'b1;
+                end else begin
 
                 lp_err_v = x_raw_v - x_lp_r;
                 if (cfg_lp_beta_i == {COEFF_W{1'b0}}) begin
@@ -291,10 +309,10 @@ module ppg_beat_detect_rr_calc #(
 
                 if (rr_should_pulse_v) begin
                     rr_valid_o <= 1'b1;
-                    rr_accepted_o <= !reject_short_rr_v;
+                    rr_accepted_o <= !reject_short_rr_v && (rr_v <= cfg_rr_max_ticks_i);
                     rr_interval_o <= rr_v;
                     if (rr_v != {T_W{1'b0}}) begin
-                        hr_bpm_new_v = 16'(32'd60000 / rr_v); // TODO: ASSUMING TIMER IS IN MS
+                        hr_bpm_new_v = 16'(32'd60000 / rr_v);
                         if (have_prev_hr_r) begin
                             delta_hr_v = $signed({1'b0, hr_bpm_new_v}) - $signed({1'b0, prev_hr_bpm_r});
                         end else begin
@@ -320,11 +338,10 @@ module ppg_beat_detect_rr_calc #(
                 xhp_d1_r <= x_hp_next_v;
                 thr_d1_r <= thr_next_v;
                 t_d1_r <= t_now_w;
+                end
 
             end
         end
     end
 
 endmodule
-
-

@@ -10,7 +10,7 @@
 //   0x00 STATUS        : 2 bytes [0x00, 0x01] — FIFO count=1
 //   0x06 FIFO_THRESH   : 2 bytes [0x00, 0x08] — threshold=8
 //   0x5F FIFO_ACCESS_ENA: write accepted, no response
-//   0x60 FIFO_ACCESS   : streams red+IR sample bytes from CSV
+//   0x60 FIFO_ACCESS   : streams one 16-bit PPG sample (red channel) per word
 //
 // CSV format: red_counts,ir_counts unsigned integers per row (14-bit)
 
@@ -152,13 +152,13 @@ module i2c_slave_adpd144ri #(
                 end
 
                 RSP_FIFO: begin
-                    // Stream red_lo, red_hi, ir_lo, ir_hi ... repeating
+                    // Stream one 16-bit sample per word: red_lo, red_hi, ...
+                    // ppg_fifo_reader consumes one 16-bit sample every 2 bytes.
                     sim_rvalid <= 1'b1;
                     case (byte_cnt)
                         2'd0: sim_rdata <= red16[7:0];
                         2'd1: sim_rdata <= red16[15:8];
-                        2'd2: sim_rdata <= ir16[7:0];
-                        2'd3: sim_rdata <= ir16[15:8];
+                        default: sim_rdata <= 8'h00;
                     endcase
 
                     if (bytes_left <= 8'd1) begin
@@ -166,10 +166,10 @@ module i2c_slave_adpd144ri #(
                         rsp_state <= RSP_IDLE;
                         byte_cnt  <= 2'd0;
                     end else begin
-                        byte_cnt   <= byte_cnt + 1;
+                        byte_cnt   <= byte_cnt + 1'b1;
                         bytes_left <= bytes_left - 1;
-                        // Load next sample every 4 bytes
-                        if (byte_cnt == 2'd3) begin
+                        // Load next sample every 2 bytes.
+                        if (byte_cnt == 2'd1) begin
                             read_next_sample;
                             byte_cnt <= 2'd0;
                         end

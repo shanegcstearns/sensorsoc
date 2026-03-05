@@ -13,7 +13,8 @@ module ppg_fifo_reader #(
     parameter integer MAX_BURST_SAMPLES = 32,
     parameter integer PACKET_BYTES = 2,
     parameter integer POLL_PERIOD = 1_000_000,
-    parameter integer TIMESTAMP_PER_SAMPLE = 1
+    parameter integer TIMESTAMP_PER_SAMPLE = 1,
+    parameter integer SAMPLE_PERIOD_TICKS = 10
 )(
     input  logic                  clk_i,
     input  logic                  rst_i,
@@ -82,6 +83,8 @@ module ppg_fifo_reader #(
     logic [15:0] read_bytes_r;
     logic [15:0] samples_left_r;
     logic [31:0] burst_time_r;
+    logic [31:0] sample_time_next_r;
+    logic [31:0] last_sample_time_r;
 
     logic poll_hit;
 
@@ -140,6 +143,8 @@ module ppg_fifo_reader #(
             read_bytes_r <= 16'd0;
             samples_left_r <= 16'd0;
             burst_time_r <= 32'd0;
+            sample_time_next_r <= 32'd0;
+            last_sample_time_r <= 32'd0;
 
             ppg_sample <= {SAMPLE_W{1'b0}};
             ppg_sample_valid <= 1'b0;
@@ -233,12 +238,31 @@ module ppg_fifo_reader #(
 
                 ST_DECIDE: begin
                     if (should_read_w) begin
+                        logic [31:0] backfill_v;
+                        logic [31:0] start_time_v;
+                        logic [31:0] min_start_v;
                         read_bytes_r <= read_bytes_pkt_w;
                         bytes_left_r <= read_bytes_pkt_w;
                         samples_left_r <= read_samples_w;
                         sample_shift_r <= {SAMPLE_W{1'b0}};
                         sample_byte_idx_r <= '0;
-                        if (TIMESTAMP_PER_SAMPLE == 0) burst_time_r <= t_now;
+                        if (TIMESTAMP_PER_SAMPLE == 0) begin
+                            burst_time_r <= t_now;
+                        end else begin
+                            if (read_samples_w > 16'd1) begin
+                                backfill_v = (read_samples_w - 16'd1) * SAMPLE_PERIOD_TICKS[31:0];
+                            end else begin
+                                backfill_v = 32'd0;
+                            end
+                            start_time_v = (t_now > backfill_v) ? (t_now - backfill_v) : 32'd0;
+                            if (last_sample_time_r != 32'd0) begin
+                                min_start_v = last_sample_time_r + SAMPLE_PERIOD_TICKS[31:0];
+                                if (start_time_v < min_start_v) begin
+                                    start_time_v = min_start_v;
+                                end
+                            end
+                            sample_time_next_r <= start_time_v;
+                        end
                         state_r <= ST_ENA1_CMD;
                     end else begin
                         state_r <= ST_POLL;
@@ -292,8 +316,14 @@ module ppg_fifo_reader #(
                             if ((sample_byte_idx_r == (SAMPLE_BYTES-1)) || i2c_rsp_last) begin
                                 ppg_sample <= sample_shift_r | ({{(SAMPLE_W-8){1'b0}}, i2c_rsp_data} << (sample_byte_idx_r * 8));
                                 ppg_sample_valid <= 1'b1;
-                                if (TIMESTAMP_PER_SAMPLE != 0) ppg_sample_time <= t_now;
-                                else ppg_sample_time <= burst_time_r;
+                                if (TIMESTAMP_PER_SAMPLE != 0) begin
+                                    ppg_sample_time <= sample_time_next_r;
+                                    last_sample_time_r <= sample_time_next_r;
+                                    sample_time_next_r <= sample_time_next_r + SAMPLE_PERIOD_TICKS[31:0];
+                                end else begin
+                                    ppg_sample_time <= burst_time_r;
+                                    last_sample_time_r <= burst_time_r;
+                                end
 
                                 sample_shift_r <= {SAMPLE_W{1'b0}};
                                 sample_byte_idx_r <= '0;
@@ -323,6 +353,7 @@ module ppg_fifo_reader #(
                         samples_left_r <= 16'd0;
                         sample_shift_r <= {SAMPLE_W{1'b0}};
                         sample_byte_idx_r <= '0;
+                        sample_time_next_r <= 32'd0;
                     end
                 end
 
@@ -332,5 +363,3 @@ module ppg_fifo_reader #(
     end
 
 endmodule
-
-
