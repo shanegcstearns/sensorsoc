@@ -1,7 +1,7 @@
 module globaltimer #(
   parameter int unsigned clk_speed_hz = 10_000_000, // default 10 MHz clock
   parameter int unsigned epoch_hz = 100,        // default 100 Hz sample rate
-  parameter int unsigned epoch_count_max = 1000        // 1000 samples per night (10 seconds at 100 Hz)
+  parameter int unsigned epoch_count_max = 1000        // 1000 samples (10 seconds at 100 Hz)
 ) (
   input  logic clk_i,
   input  logic rst_i,
@@ -68,5 +68,6 @@ module globaltimer #(
       end
     end
   end
+
 
 endmodule
