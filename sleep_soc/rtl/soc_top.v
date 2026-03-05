@@ -93,6 +93,7 @@ module soc_top #(
     wire bus_valid = mem_valid && cpu_clk_en_lat;
     wire sram_sel = bus_valid && (mem_addr < 4*MEM_WORDS);
     wire mmio_sel = bus_valid && (mem_addr[31:24] == 8'h03);
+    wire ml_sel = bus_valid && (mem_addr[31:12] == ML_BASE[31:12]);  // 0x0300_3000 page
 
     // SRAM
     wire        sram_ready;
@@ -161,7 +162,7 @@ module soc_top #(
   wire        ml_event;
   wire [31:0] ml_score;
 
-  // AXI-Lite wires between bridge and taketwo_wrap
+  // AXI-Lite wires between bridge and mlp_wrap
   wire [31:0] ml_saxi_awaddr, ml_saxi_wdata, ml_saxi_araddr;
   wire [2:0]  ml_saxi_awprot, ml_saxi_arprot;
   wire        ml_saxi_awvalid, ml_saxi_awready;
@@ -177,7 +178,7 @@ module soc_top #(
     .clk(clk),
     .resetn(resetn),
 
-    .mem_valid(mmio_sel),
+    .mem_valid(ml_sel),
     .mem_addr(mem_addr),
     .mem_wdata(mem_wdata),
     .mem_wstrb(mem_wstrb),
@@ -213,6 +214,101 @@ module soc_top #(
     .saxi_rready (ml_saxi_rready)
   );
 
+
+// ML wrapper instance (AXI-Lite slave side hooked to bridge)
+wire ml_irq;
+
+// AXI master side of ML (maxi_*).
+// tie-offs to keep sim/build working.
+wire        maxi_awready = 1'b0;
+wire        maxi_wready  = 1'b0;
+wire [0:0]  maxi_bid     = 1'b0;
+wire [1:0]  maxi_bresp   = 2'b00;
+wire        maxi_bvalid  = 1'b0;
+
+wire        maxi_arready = 1'b0;
+wire [0:0]  maxi_rid     = 1'b0;
+wire [31:0] maxi_rdata   = 32'h0;
+wire [1:0]  maxi_rresp   = 2'b00;
+wire        maxi_rlast   = 1'b0;
+wire        maxi_rvalid  = 1'b0;
+
+wlp_wrap u_wlp (
+  .CLK   (clk),
+  .RESETN(resetn),
+  .irq   (ml_irq),
+
+  // AXI master (unused for now)
+  .maxi_awid   (),          // wrapper ties IDs internally
+  .maxi_awaddr (),
+  .maxi_awlen  (),
+  .maxi_awsize (),
+  .maxi_awburst(),
+  .maxi_awlock (),
+  .maxi_awcache(),
+  .maxi_awprot (),
+  .maxi_awqos  (),
+  .maxi_awuser (),
+  .maxi_awvalid(),
+  .maxi_awready(maxi_awready),
+
+  .maxi_wdata  (),
+  .maxi_wstrb  (),
+  .maxi_wlast  (),
+  .maxi_wvalid (),
+  .maxi_wready (maxi_wready),
+
+  .maxi_bid    (maxi_bid),
+  .maxi_bresp  (maxi_bresp),
+  .maxi_bvalid (maxi_bvalid),
+  .maxi_bready (),
+
+  .maxi_arid   (),
+  .maxi_araddr (),
+  .maxi_arlen  (),
+  .maxi_arsize (),
+  .maxi_arburst(),
+  .maxi_arlock (),
+  .maxi_arcache(),
+  .maxi_arprot (),
+  .maxi_arqos  (),
+  .maxi_aruser (),
+  .maxi_arvalid(),
+  .maxi_arready(maxi_arready),
+
+  .maxi_rid    (maxi_rid),
+  .maxi_rdata  (maxi_rdata),
+  .maxi_rresp  (maxi_rresp),
+  .maxi_rlast  (maxi_rlast),
+  .maxi_rvalid (maxi_rvalid),
+  .maxi_rready (),
+
+  // AXI-Lite slave (THIS is what the CPU/bridge talks to)
+  .saxi_awaddr (ml_saxi_awaddr),
+  .saxi_awprot (ml_saxi_awprot),
+  .saxi_awvalid(ml_saxi_awvalid),
+  .saxi_awready(ml_saxi_awready),
+
+  .saxi_wdata  (ml_saxi_wdata),
+  .saxi_wstrb  (ml_saxi_wstrb),
+  .saxi_wvalid (ml_saxi_wvalid),
+  .saxi_wready (ml_saxi_wready),
+
+  .saxi_bresp  (ml_saxi_bresp),
+  .saxi_bvalid (ml_saxi_bvalid),
+  .saxi_bready (ml_saxi_bready),
+
+  .saxi_araddr (ml_saxi_araddr),
+  .saxi_arprot (ml_saxi_arprot),
+  .saxi_arvalid(ml_saxi_arvalid),
+  .saxi_arready(ml_saxi_arready),
+
+  .saxi_rdata  (ml_saxi_rdata),
+  .saxi_rresp  (ml_saxi_rresp),
+  .saxi_rvalid (ml_saxi_rvalid),
+  .saxi_rready (ml_saxi_rready)
+);
+
     // Host I2C target + bridge registers
     wire       i2c_wr_en, i2c_proto_err;
     wire [7:0] i2c_wr_addr, i2c_wr_data, i2c_rd_addr, i2c_rd_data;
@@ -247,7 +343,7 @@ module soc_top #(
     wire        irqc_ready;
     wire [31:0] irqc_rdata;
     wire        irqc_wake_req;
-    wire [31:0] irq_sources = {29'b0, host_i2c_irq_event, ml_event, timer_event};
+    wire [31:0] irq_sources = {29'b0, host_i2c_irq_event, ml_event, timer_event, ml_irq};
 
     irq_ctrl_mmio #(.BASE_ADDR(IRQC_BASE)) u_irqc (
         .clk      (clk),
