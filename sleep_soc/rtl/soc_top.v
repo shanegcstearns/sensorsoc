@@ -93,7 +93,9 @@ module soc_top #(
     wire bus_valid = mem_valid && cpu_clk_en_lat;
     wire sram_sel = bus_valid && (mem_addr < 4*MEM_WORDS);
     wire mmio_sel = bus_valid && (mem_addr[31:24] == 8'h03);
-    wire ml_sel = bus_valid && (mem_addr[31:12] == ML_BASE[31:12]);  // 0x0300_3000 page
+    
+    //wire ml_page  = (mem_addr[31:12] == ML_BASE[31:12]);
+    //wire ml_sel   = bus_valid && ml_page;
 
     // SRAM
     wire        sram_ready;
@@ -155,7 +157,7 @@ module soc_top #(
         .event_o  (timer_event),
         .rdata_o  (timer_rdata)
     );
-
+/*
   // ML AXI-Lite bridge
   wire        ml_ready;
   wire [31:0] ml_rdata;
@@ -308,7 +310,7 @@ taketwo_wrap u_taketwo (
   .saxi_rvalid (ml_saxi_rvalid),
   .saxi_rready (ml_saxi_rready)
 );
-
+*/
     // Host I2C target + bridge registers
     wire       i2c_wr_en, i2c_proto_err;
     wire [7:0] i2c_wr_addr, i2c_wr_data, i2c_rd_addr, i2c_rd_data;
@@ -343,7 +345,7 @@ taketwo_wrap u_taketwo (
     wire        irqc_ready;
     wire [31:0] irqc_rdata;
     wire        irqc_wake_req;
-    wire [31:0] irq_sources = {29'b0, host_i2c_irq_event, ml_event, timer_event, ml_irq};
+    wire [31:0] irq_sources = {29'b0, host_i2c_irq_event, /*ml_event,*/ timer_event};
 
     irq_ctrl_mmio #(.BASE_ADDR(IRQC_BASE)) u_irqc (
         .clk      (clk),
@@ -398,17 +400,14 @@ taketwo_wrap u_taketwo (
         .code_o(test_code)
     );
 
-
-
-
     // MMIO bus response mux (to PicoRV32)
-    wire mmio_ready = gpio_ready | pwr_ready | timer_ready | ml_ready | irqc_ready | test_ready;
+    wire mmio_ready = gpio_ready | pwr_ready | timer_ready | /*ml_ready*/ | irqc_ready | test_ready;
 
     wire [31:0] mmio_rdata =
         gpio_ready  ? gpio_rdata  :
         pwr_ready   ? pwr_rdata   :
         timer_ready ? timer_rdata :
-        ml_ready    ? ml_rdata    :
+       /* ml_ready    ? ml_rdata    :*/
         irqc_ready  ? irqc_rdata  :
         test_ready  ? test_rdata  :
         32'h0000_0000;
