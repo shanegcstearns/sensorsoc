@@ -76,10 +76,9 @@ module cpu_to_ml #(
     .saxi_rready (saxi_rready)
   );
 
-  // ------------------------------------------------------------
+
   // taketwo wrapper (AXI-Lite slave + AXI master for RAM)
-  // We'll hook up the AXI master ports so cocotbext-axi can attach AxiRam.
-  // ------------------------------------------------------------
+  // hook up the AXI master ports so cocotbext-axi can attach AxiRam.
 
   // AXI master: inputs from RAM slave (driven by cocotbext-axi)
   wire        maxi_awready;

@@ -18,7 +18,7 @@ async def reset_dut(dut, cycles=10):
     Start the clock, apply reset, and clear the fake-MMIO inputs.
 
     Why:
-      - Your cpu_to_ml module is driven by cocotb through mem_* signals.
+      - cpu_to_ml module is driven by cocotb through mem_* signals.
       - The bridge FSM requires mem_valid to drop between transactions.
       - We want no X propagation on mem_* at time 0.
     """
@@ -39,7 +39,7 @@ async def mmio_write32(dut, addr: int, data: int, timeout_cycles=2000):
     """
     Perform one 32-bit write over the fake CPU MMIO interface.
 
-    Protocol expectation (matches your bridge):
+    Protocol expectation (matches bridge):
       - Drive mem_valid high with addr/wdata/wstrb
       - Wait for mem_ready
       - MUST drop mem_valid so bridge can exit ST_RESP
@@ -145,7 +145,7 @@ async def test_axil_bridge_basic_reads(dut):
     """
     What this test proves:
 
-    1) Your fake CPU MMIO interface can successfully issue READ transactions.
+    1) fake CPU MMIO interface can successfully issue READ transactions.
     2) ml_axil_bridge_mmio converts those into AXI-Lite reads.
     3) taketwo_wrap responds (AXI-Lite slave is alive, address decode works).
     4) The bridge FSM returns mem_ready and mem_rdata correctly (no hanging in ST_RESP).

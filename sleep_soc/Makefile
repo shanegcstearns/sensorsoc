@@ -19,9 +19,10 @@
 #   make sim-soc FW_VARIANT=test_sleepwake_periodic
 #   make sim-soc FW_VARIANT=main
 #
-#   # Unit tests
+#   # Cocotb tests
 #   make test-mmio
 #   make test-timer
+#	make test-cpu-ml
 #
 #   # Standalone SV testbench
 #   make sim-reset-ctrl
