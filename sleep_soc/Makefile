@@ -288,6 +288,33 @@ test-timer: $(TIMER_VVP)
 	$(VVP) -M "$(COCOTB_LIBDIR)" -m libcocotbvpi_icarus $(TIMER_VVP)
 
 # ============================================================
+# Cocotb: cpu_to_ml (AXI-Lite bridge + taketwo_wrap)
+# ============================================================
+
+CPU_ML_TOP    := sim_cpu_to_ml
+CPU_ML_TOP_V  := $(TB_DIR)/sim_cpu_to_ml.v
+CPU_ML_VVP    := sim_cpu_to_ml.vvp
+CPU_ML_PYMOD  := cpu_to_ml_tb
+
+CPU_ML_RTL_SRCS := \
+  $(RTL_DIR)/cpu_to_ml.v \
+  $(RTL_DIR)/ml_axil_bridge_mmio.v \
+  $(RTL_DIR)/taketwo_wrap.v \
+  $(RTL_DIR)/taketwo.v
+
+$(CPU_ML_VVP): $(CPU_ML_TOP_V) $(CPU_ML_RTL_SRCS)
+	@echo "[COCOTB] Building $@"
+	$(IVERILOG) -g2012 -o $@ \
+	  $(CPU_ML_TOP_V) \
+	  $(CPU_ML_RTL_SRCS)
+
+.PHONY: test-cpu-ml
+test-cpu-ml: $(CPU_ML_VVP)
+	@echo "[COCOTB] Running $(CPU_ML_PYMOD) on $(CPU_ML_TOP)"
+	@export COCOTB_TOPLEVEL=$(CPU_ML_TOP); \
+	export COCOTB_TEST_MODULES=$(CPU_ML_PYMOD); \
+	$(call RUN_COCOTB_ICARUS,$(CPU_ML_VVP))
+# ============================================================
 # Cocotb: ML test 
 # ============================================================
 
