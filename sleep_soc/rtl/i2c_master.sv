@@ -4,292 +4,262 @@
 //
 // Functional I2C master for wristwatch sleep tracker SoC.
 //
-// Polls two sensors on a shared I2C bus:
-//   - LIS2DW12  accel  @ 7-bit addr 0x18  (SA0=0)
-//   - ADPD144RI PPG    @ 7-bit addr 0x64
+// Accepts commands from accel_reader and ppg_fifo_reader via a shared
+// command/response bus. Arbitrates between the two clients and executes
+// I2C transactions against the simulation slave models.
 //
-// Functional model — abstracts away bit-banging, models correct:
-//   - Device addressing, register addressing, multi-byte burst reads
-//   - ACK/NACK handling
+// Command interface (driven by accel_reader / ppg_fifo_reader):
+//   i2c_cmd_valid  -- client asserts to request a transaction
+//   i2c_cmd_ready  -- master asserts when ready to accept
+//   i2c_cmd_addr   -- 7-bit device address
+//   i2c_cmd_reg    -- register/subaddress byte
+//   i2c_cmd_len    -- number of bytes to read (or 1 for write)
+//   i2c_cmd_write  -- 1=write, 0=read
+//   i2c_cmd_wdata  -- write data byte (single byte writes only)
 //
-// Outputs clean valid/data streams to downstream blocks:
-//   - accel_valid, accel_ax/ay/az  → Accel Reader / motion_preprocess
-//   - ppg_valid, ppg_red, ppg_ir   → PPG read + timestamp block
+// Response interface (driven by master back to clients):
+//   i2c_rsp_valid  -- one byte of response data is ready
+//   i2c_rsp_data   -- response byte
+//   i2c_rsp_last   -- this is the last byte (same cycle as final rsp_valid)
+//   i2c_rsp_done   -- transaction complete
+//   i2c_rsp_err    -- transaction failed (NACK from slave)
+//   i2c_rsp_ready  -- client ready to accept response (flow control)
+//
+// Functional simulation bus (connects to i2c_slave_lis2dw12 / i2c_slave_adpd144ri):
+//   sim_req/ack/rdata/rvalid/rlast/err
+//
+// Arbitration: round-robin between accel and PPG clients.
 
-module i2c_master #(
-    parameter [6:0] ACCEL_ADDR       = 7'h18,
-    parameter [6:0] PPG_ADDR         = 7'h64,
-
-    parameter [7:0] ACCEL_REG_STATUS = 8'h27,
-    parameter [7:0] ACCEL_REG_DATA   = 8'h28,
-
-    parameter [7:0] PPG_REG_STATUS   = 8'h00,
-    parameter [7:0] PPG_REG_SLOT_A   = 8'h60,
-    parameter [7:0] PPG_REG_SLOT_B   = 8'h64,
-
-    // Poll periods in sys clk cycles
-    // 25 Hz accel:  50_000_000 / 25  = 2_000_000 cycles
-    // 100 Hz PPG:   50_000_000 / 100 =   500_000 cycles
-    parameter integer ACCEL_POLL_CYCLES = 2_000_000,
-    parameter integer PPG_POLL_CYCLES   =   500_000
-)(
+module i2c_master (
     input  wire        clk,
     input  wire        resetn,
 
-    // Functional I2C bus
-    output reg         i2c_req,
-    output reg  [6:0]  i2c_addr,
-    output reg  [7:0]  i2c_reg,
-    output reg  [7:0]  i2c_len,
-    input  wire        i2c_ack,
-    input  wire [7:0]  i2c_rdata,
-    input  wire        i2c_rvalid,
-    input  wire        i2c_rlast,
-    input  wire        i2c_err,
 
-    // Accel output
-    output reg         accel_valid,
-    output reg signed [13:0] accel_ax,
-    output reg signed [13:0] accel_ay,
-    output reg signed [13:0] accel_az,
+    // Client 0: accel_reader
 
-    // PPG output
-    output reg         ppg_valid,
-    output reg [13:0]  ppg_red,
-    output reg [13:0]  ppg_ir,
+    input  wire        accel_cmd_valid_i,
+    output reg         accel_cmd_ready_o,
+    input  wire [6:0]  accel_cmd_addr_i,
+    input  wire [7:0]  accel_cmd_reg_i,
+    input  wire [7:0]  accel_cmd_len_i,
+    input  wire        accel_cmd_write_i,
+    input  wire [7:0]  accel_cmd_wdata_i,
 
-    // Status
-    output reg         accel_err_o,
-    output reg         ppg_err_o,
+    output reg         accel_rsp_valid_o,
+    output reg  [7:0]  accel_rsp_data_o,
+    output reg         accel_rsp_last_o,
+    output reg         accel_rsp_done_o,
+    output reg         accel_rsp_err_o,
+    input  wire        accel_rsp_ready_i,
 
-    // Config
-    input  wire [1:0]  enable_i
+
+    // Client 1: ppg_fifo_reader
+
+    input  wire        ppg_cmd_valid_i,
+    output reg         ppg_cmd_ready_o,
+    input  wire [6:0]  ppg_cmd_addr_i,
+    input  wire [7:0]  ppg_cmd_reg_i,
+    input  wire [7:0]  ppg_cmd_len_i,
+    input  wire        ppg_cmd_write_i,
+    input  wire [7:0]  ppg_cmd_wdata_i,
+
+    output reg         ppg_rsp_valid_o,
+    output reg  [7:0]  ppg_rsp_data_o,
+    output reg         ppg_rsp_last_o,
+    output reg         ppg_rsp_done_o,
+    output reg         ppg_rsp_err_o,
+    input  wire        ppg_rsp_ready_i,
+
+
+    // Functional simulation bus
+
+    output reg         sim_req,
+    output reg  [6:0]  sim_addr,
+    output reg  [7:0]  sim_reg,
+    output reg  [7:0]  sim_len,
+    output reg         sim_write,
+    output reg  [7:0]  sim_wdata,
+    input  wire        sim_ack,
+    input  wire [7:0]  sim_rdata,
+    input  wire        sim_rvalid,
+    input  wire        sim_rlast,
+    input  wire        sim_err
 );
 
-
-    // State machine
-
-    typedef enum logic [3:0] {
-        ST_IDLE         = 4'd0,
-        ST_ACCEL_STATUS = 4'd1,
-        ST_ACCEL_WAIT   = 4'd2,
-        ST_ACCEL_DATA   = 4'd3,
-        ST_ACCEL_RECV   = 4'd4,
-        ST_PPG_STATUS   = 4'd5,
-        ST_PPG_WAIT     = 4'd6,
-        ST_PPG_SLOT_A   = 4'd7,
-        ST_PPG_SLOT_A_R = 4'd8,
-        ST_PPG_SLOT_B   = 4'd9,
-        ST_PPG_SLOT_B_R = 4'd10
+    typedef enum logic [2:0] {
+        ST_IDLE     = 3'd0,
+        ST_ARB      = 3'd1,
+        ST_REQ      = 3'd2,
+        ST_WAIT_ACK = 3'd3,
+        ST_DATA     = 3'd4,
+        ST_DONE     = 3'd5
     } state_t;
 
     state_t state_r;
 
-    // Poll counters — count sys clk cycles directly
-    reg [31:0] accel_poll_cnt;
-    reg [31:0] ppg_poll_cnt;
+    reg        active_client;
+    reg        last_grant;
 
-    // Byte assembly
-    reg [7:0]  accel_bytes [0:4];   // XL,XH,YL,YH,ZL (ZH comes in last rvalid)
-    reg [2:0]  accel_byte_idx;
-    reg [7:0]  ppg_red_lo;          // store red low byte
+    reg [6:0]  cmd_addr_r;
+    reg [7:0]  cmd_reg_r;
+    reg [7:0]  cmd_len_r;
+    reg        cmd_write_r;
+    reg [7:0]  cmd_wdata_r;
+    reg [7:0]  byte_cnt_r;
 
-
-    // Poll counters
-
-    always @(posedge clk) begin
-        if (!resetn) begin
-            accel_poll_cnt <= 32'd0;
-            ppg_poll_cnt   <= 32'd0;
-        end else begin
-            // Accel counter — reset when we start a poll
-            if (state_r == ST_ACCEL_STATUS)
-                accel_poll_cnt <= 32'd0;
-            else if (enable_i[0] && accel_poll_cnt < ACCEL_POLL_CYCLES)
-                accel_poll_cnt <= accel_poll_cnt + 1;
-
-            // PPG counter — reset when we start a poll
-            if (state_r == ST_PPG_STATUS)
-                ppg_poll_cnt <= 32'd0;
-            else if (enable_i[1] && ppg_poll_cnt < PPG_POLL_CYCLES)
-                ppg_poll_cnt <= ppg_poll_cnt + 1;
-        end
-    end
-
-    wire accel_poll_due = enable_i[0] && (accel_poll_cnt >= ACCEL_POLL_CYCLES);
-    wire ppg_poll_due   = enable_i[1] && (ppg_poll_cnt   >= PPG_POLL_CYCLES);
-
-
-    // Main state machine
+    wire accel_req = accel_cmd_valid_i;
+    wire ppg_req   = ppg_cmd_valid_i;
 
     always @(posedge clk) begin
         if (!resetn) begin
-            state_r        <= ST_IDLE;
-            i2c_req        <= 1'b0;
-            i2c_addr       <= 7'h00;
-            i2c_reg        <= 8'h00;
-            i2c_len        <= 8'd0;
-            accel_valid    <= 1'b0;
-            accel_ax       <= '0;
-            accel_ay       <= '0;
-            accel_az       <= '0;
-            ppg_valid      <= 1'b0;
-            ppg_red        <= '0;
-            ppg_ir         <= '0;
-            accel_err_o    <= 1'b0;
-            ppg_err_o      <= 1'b0;
-            accel_byte_idx <= '0;
-            ppg_red_lo     <= 8'h0;
+            state_r           <= ST_IDLE;
+            active_client     <= 1'b0;
+            last_grant        <= 1'b1;
+            accel_cmd_ready_o <= 1'b0;
+            accel_rsp_valid_o <= 1'b0;
+            accel_rsp_data_o  <= 8'h00;
+            accel_rsp_last_o  <= 1'b0;
+            accel_rsp_done_o  <= 1'b0;
+            accel_rsp_err_o   <= 1'b0;
+            ppg_cmd_ready_o   <= 1'b0;
+            ppg_rsp_valid_o   <= 1'b0;
+            ppg_rsp_data_o    <= 8'h00;
+            ppg_rsp_last_o    <= 1'b0;
+            ppg_rsp_done_o    <= 1'b0;
+            ppg_rsp_err_o     <= 1'b0;
+            sim_req           <= 1'b0;
+            sim_addr          <= 7'h00;
+            sim_reg           <= 8'h00;
+            sim_len           <= 8'h00;
+            sim_write         <= 1'b0;
+            sim_wdata         <= 8'h00;
+            cmd_addr_r        <= 7'h00;
+            cmd_reg_r         <= 8'h00;
+            cmd_len_r         <= 8'h00;
+            cmd_write_r       <= 1'b0;
+            cmd_wdata_r       <= 8'h00;
+            byte_cnt_r        <= 8'h00;
         end else begin
-            i2c_req     <= 1'b0;
-            accel_valid <= 1'b0;
-            ppg_valid   <= 1'b0;
+            accel_cmd_ready_o <= 1'b0;
+            accel_rsp_valid_o <= 1'b0;
+            accel_rsp_last_o  <= 1'b0;
+            accel_rsp_done_o  <= 1'b0;
+            accel_rsp_err_o   <= 1'b0;
+            ppg_cmd_ready_o   <= 1'b0;
+            ppg_rsp_valid_o   <= 1'b0;
+            ppg_rsp_last_o    <= 1'b0;
+            ppg_rsp_done_o    <= 1'b0;
+            ppg_rsp_err_o     <= 1'b0;
+            sim_req           <= 1'b0;
 
             case (state_r)
 
-                
                 ST_IDLE: begin
-                    if (accel_poll_due) begin
-                        state_r <= ST_ACCEL_STATUS;
-                    end else if (ppg_poll_due) begin
-                        state_r <= ST_PPG_STATUS;
+                    if (accel_req || ppg_req)
+                        state_r <= ST_ARB;
+                end
+
+                ST_ARB: begin
+                    if (accel_req && ppg_req) begin
+                        active_client <= ~last_grant;
+                        last_grant    <= ~last_grant;
+                    end else if (accel_req) begin
+                        active_client <= 1'b0;
+                        last_grant    <= 1'b0;
+                    end else begin
+                        active_client <= 1'b1;
+                        last_grant    <= 1'b1;
                     end
+                    state_r <= ST_REQ;
                 end
 
-                
-                // ACCEL: read status register (1 byte)
-                
-                ST_ACCEL_STATUS: begin
-                    i2c_req  <= 1'b1;
-                    i2c_addr <= ACCEL_ADDR;
-                    i2c_reg  <= ACCEL_REG_STATUS;
-                    i2c_len  <= 8'd1;
-                    if (i2c_ack)
-                        state_r <= ST_ACCEL_WAIT;
-                end
-
-                ST_ACCEL_WAIT: begin
-                    if (i2c_err) begin
-                        accel_err_o <= 1'b1;
-                        state_r     <= ST_IDLE;
-                    end else if (i2c_rvalid && i2c_rlast) begin
-                        if (i2c_rdata[0])
-                            state_r <= ST_ACCEL_DATA;
-                        else
-                            state_r <= ST_IDLE;
+                ST_REQ: begin
+                    if (active_client == 1'b0) begin
+                        accel_cmd_ready_o <= 1'b1;
+                        cmd_addr_r  <= accel_cmd_addr_i;
+                        cmd_reg_r   <= accel_cmd_reg_i;
+                        cmd_len_r   <= accel_cmd_len_i;
+                        cmd_write_r <= accel_cmd_write_i;
+                        cmd_wdata_r <= accel_cmd_wdata_i;
+                    end else begin
+                        ppg_cmd_ready_o <= 1'b1;
+                        cmd_addr_r  <= ppg_cmd_addr_i;
+                        cmd_reg_r   <= ppg_cmd_reg_i;
+                        cmd_len_r   <= ppg_cmd_len_i;
+                        cmd_write_r <= ppg_cmd_write_i;
+                        cmd_wdata_r <= ppg_cmd_wdata_i;
                     end
+                    byte_cnt_r <= 8'h00;
+                    state_r    <= ST_WAIT_ACK;
                 end
 
-                
-                // ACCEL: burst read 6 bytes from OUT_X_L
-                
-                ST_ACCEL_DATA: begin
-                    i2c_req        <= 1'b1;
-                    i2c_addr       <= ACCEL_ADDR;
-                    i2c_reg        <= ACCEL_REG_DATA;
-                    i2c_len        <= 8'd6;
-                    accel_byte_idx <= 3'd0;
-                    if (i2c_ack)
-                        state_r <= ST_ACCEL_RECV;
-                end
+                ST_WAIT_ACK: begin
+                    sim_req   <= 1'b1;
+                    sim_addr  <= cmd_addr_r;
+                    sim_reg   <= cmd_reg_r;
+                    sim_len   <= cmd_len_r;
+                    sim_write <= cmd_write_r;
+                    sim_wdata <= cmd_wdata_r;
 
-                ST_ACCEL_RECV: begin
-                    if (i2c_err) begin
-                        accel_err_o <= 1'b1;
-                        state_r     <= ST_IDLE;
-                    end else if (i2c_rvalid) begin
-                        if (accel_byte_idx < 3'd5)
-                            accel_bytes[accel_byte_idx] <= i2c_rdata;
-
-                        accel_byte_idx <= accel_byte_idx + 1;
-
-                        if (i2c_rlast) begin
-                            // {XH,XL} >> 2 = 14-bit signed
-                            accel_ax    <= $signed({accel_bytes[1], accel_bytes[0]}) >>> 2;
-                            accel_ay    <= $signed({accel_bytes[3], accel_bytes[2]}) >>> 2;
-                            accel_az    <= $signed({i2c_rdata,      accel_bytes[4]}) >>> 2;
-                            accel_valid <= 1'b1;
-                            state_r     <= ST_IDLE;
-                        end
-                    end
-                end
-
-                
-                // PPG: read status (2 bytes)
-                
-                ST_PPG_STATUS: begin
-                    i2c_req  <= 1'b1;
-                    i2c_addr <= PPG_ADDR;
-                    i2c_reg  <= PPG_REG_STATUS;
-                    i2c_len  <= 8'd2;
-                    if (i2c_ack)
-                        state_r <= ST_PPG_WAIT;
-                end
-
-                ST_PPG_WAIT: begin
-                    if (i2c_err) begin
-                        ppg_err_o <= 1'b1;
-                        state_r   <= ST_IDLE;
-                    end else if (i2c_rvalid && i2c_rlast) begin
-                        // i2c_rdata is last byte = FIFO count
-                        if (i2c_rdata != 8'h00)
-                            state_r <= ST_PPG_SLOT_A;
-                        else
-                            state_r <= ST_IDLE;
-                    end
-                end
-
-                
-                // PPG: read Time Slot A (red, 2 bytes)
-                
-                ST_PPG_SLOT_A: begin
-                    i2c_req  <= 1'b1;
-                    i2c_addr <= PPG_ADDR;
-                    i2c_reg  <= PPG_REG_SLOT_A;
-                    i2c_len  <= 8'd2;
-                    if (i2c_ack)
-                        state_r <= ST_PPG_SLOT_A_R;
-                end
-
-                ST_PPG_SLOT_A_R: begin
-                    if (i2c_err) begin
-                        ppg_err_o <= 1'b1;
-                        state_r   <= ST_IDLE;
-                    end else if (i2c_rvalid) begin
-                        if (!i2c_rlast) begin
-                            ppg_red_lo <= i2c_rdata;   // low byte first
+                    if (sim_err) begin
+                        if (active_client == 1'b0) begin
+                            accel_rsp_err_o  <= 1'b1;
+                            accel_rsp_done_o <= 1'b1;
                         end else begin
-                            ppg_red  <= {i2c_rdata[5:0], ppg_red_lo};  // 14-bit
-                            state_r  <= ST_PPG_SLOT_B;
+                            ppg_rsp_err_o  <= 1'b1;
+                            ppg_rsp_done_o <= 1'b1;
                         end
-                    end
-                end
-
-                
-                // PPG: read Time Slot B (IR, 2 bytes)
-                
-                ST_PPG_SLOT_B: begin
-                    i2c_req  <= 1'b1;
-                    i2c_addr <= PPG_ADDR;
-                    i2c_reg  <= PPG_REG_SLOT_B;
-                    i2c_len  <= 8'd2;
-                    if (i2c_ack)
-                        state_r <= ST_PPG_SLOT_B_R;
-                end
-
-                ST_PPG_SLOT_B_R: begin
-                    if (i2c_err) begin
-                        ppg_err_o <= 1'b1;
-                        state_r   <= ST_IDLE;
-                    end else if (i2c_rvalid) begin
-                        if (!i2c_rlast) begin
-                            ppg_red_lo <= i2c_rdata;   // reuse as ir_lo
+                        state_r <= ST_DONE;
+                    end else if (sim_ack) begin
+                        sim_req <= 1'b0;
+                        if (cmd_write_r) begin
+                            // Write — no response bytes, signal done immediately
+                            if (active_client == 1'b0)
+                                accel_rsp_done_o <= 1'b1;
+                            else
+                                ppg_rsp_done_o <= 1'b1;
+                            state_r <= ST_DONE;
                         end else begin
-                            ppg_ir    <= {i2c_rdata[5:0], ppg_red_lo};
-                            ppg_valid <= 1'b1;
-                            state_r   <= ST_IDLE;
+                            state_r <= ST_DATA;
                         end
                     end
+                end
+
+                ST_DATA: begin
+                    if (sim_err) begin
+                        if (active_client == 1'b0) begin
+                            accel_rsp_err_o  <= 1'b1;
+                            accel_rsp_done_o <= 1'b1;
+                        end else begin
+                            ppg_rsp_err_o  <= 1'b1;
+                            ppg_rsp_done_o <= 1'b1;
+                        end
+                        state_r <= ST_DONE;
+                    end else if (sim_rvalid) begin
+                        byte_cnt_r <= byte_cnt_r + 1;
+
+                        if (active_client == 1'b0) begin
+                            accel_rsp_valid_o <= 1'b1;
+                            accel_rsp_data_o  <= sim_rdata;
+                            accel_rsp_last_o  <= sim_rlast;
+                            if (sim_rlast) begin
+                                accel_rsp_done_o <= 1'b1;
+                                state_r <= ST_DONE;
+                            end
+                        end else begin
+                            ppg_rsp_valid_o <= 1'b1;
+                            ppg_rsp_data_o  <= sim_rdata;
+                            ppg_rsp_last_o  <= sim_rlast;
+                            if (sim_rlast) begin
+                                ppg_rsp_done_o <= 1'b1;
+                                state_r <= ST_DONE;
+                            end
+                        end
+                    end
+                end
+
+                ST_DONE: begin
+                    state_r <= ST_IDLE;
                 end
 
                 default: state_r <= ST_IDLE;
