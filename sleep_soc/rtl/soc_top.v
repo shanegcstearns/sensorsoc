@@ -12,18 +12,15 @@ module soc_top #(
     parameter PWR_BASE    = 32'h0300_1000,
     parameter TIMER_BASE  = 32'h0300_2000,
     parameter ML_BASE     = 32'h0300_3000,
-    parameter ML_ACCEL_BASE  = 32'h0300_4000,
     parameter IRQC_BASE   = 32'h0300_5000,
     parameter TEST_BASE = 32'h0300_F000
 )(
     input  wire        clk,        // always-on clock
     input  wire        resetn,     // active-low reset (always-on)
-
-    output wire [7:0]  gpio_out,   // good for LEDs in FPGA later
-
-    // Host I2C target interface
     input  wire        i2c_scl_i,
     inout  wire        i2c_sda_io,
+
+    output wire [7:0]  gpio_out,   // good for LEDs in FPGA later
 
     // optional: expose for waveform/debug
     output wire        cpu_clk_o,
@@ -174,35 +171,54 @@ module soc_top #(
         .event_o  (ml_event),
         .score_o  (ml_score)
     );
-    
-    // Host I2C target + bridge registers
-    wire       i2c_wr_en, i2c_proto_err;
-    wire [7:0] i2c_wr_addr, i2c_wr_data, i2c_rd_addr, i2c_rd_data;
-    wire       host_i2c_irq_event;
 
-    host_i2c_target #(.SLAVE_ADDR(7'h42)) u_i2c_target (
-        .clk        (clk),
-        .resetn     (resetn),
-        .i2c_scl_i  (i2c_scl_i),
-        .i2c_sda_io (i2c_sda_io),
-        .wr_en_o    (i2c_wr_en),
-        .wr_addr_o  (i2c_wr_addr),
-        .wr_data_o  (i2c_wr_data),
-        .rd_addr_o  (i2c_rd_addr),
-        .rd_data_i  (i2c_rd_data),
-        .proto_err_o(i2c_proto_err)
+    // Off-chip host I2C target bridge (always-on domain)
+    wire        host_i2c_wr_en;
+    wire [7:0]  host_i2c_wr_addr;
+    wire [7:0]  host_i2c_wr_data;
+    wire [7:0]  host_i2c_rd_addr;
+    wire [7:0]  host_i2c_rd_data;
+    wire        host_i2c_proto_err;
+    wire        host_i2c_irq_event;
+    wire        host_i2c_irqc_req;
+    wire        host_i2c_irqc_we;
+    wire [7:0]  host_i2c_irqc_off;
+    wire [31:0] host_i2c_irqc_wdata;
+    wire        host_i2c_irqc_ready;
+    wire [31:0] host_i2c_irqc_rdata;
+
+    host_i2c_target #(
+        .SLAVE_ADDR(7'h42)
+    ) u_host_i2c_target (
+        .clk       (clk),
+        .resetn    (resetn),
+        .i2c_scl_i (i2c_scl_i),
+        .i2c_sda_io(i2c_sda_io),
+        .wr_en_o   (host_i2c_wr_en),
+        .wr_addr_o (host_i2c_wr_addr),
+        .wr_data_o (host_i2c_wr_data),
+        .rd_addr_o (host_i2c_rd_addr),
+        .rd_data_i (host_i2c_rd_data),
+        .proto_err_o(host_i2c_proto_err)
     );
 
-    host_i2c_bridge_regs u_i2c_bridge (
-        .clk        (clk),
-        .resetn     (resetn),
-        .wr_en_i    (i2c_wr_en),
-        .wr_addr_i  (i2c_wr_addr),
-        .wr_data_i  (i2c_wr_data),
-        .rd_addr_i  (i2c_rd_addr),
-        .rd_data_o  (i2c_rd_data),
-        .proto_err_i(i2c_proto_err),
-        .event_o    (host_i2c_irq_event)
+    host_i2c_bridge_regs u_host_i2c_bridge_regs (
+        .clk       (clk),
+        .resetn    (resetn),
+        .wr_en_i   (host_i2c_wr_en),
+        .wr_addr_i (host_i2c_wr_addr),
+        .wr_data_i (host_i2c_wr_data),
+        .rd_addr_i (host_i2c_rd_addr),
+        .rd_data_o (host_i2c_rd_data),
+        .proto_err_i(host_i2c_proto_err),
+        .ml_score_i(ml_score),
+        .event_o   (host_i2c_irq_event),
+        .irqc_req_o(host_i2c_irqc_req),
+        .irqc_we_o (host_i2c_irqc_we),
+        .irqc_off_o(host_i2c_irqc_off),
+        .irqc_wdata_o(host_i2c_irqc_wdata),
+        .irqc_ready_i(host_i2c_irqc_ready),
+        .irqc_rdata_i(host_i2c_irqc_rdata)
     );
 
     // IRQ controller: pending/mask/wake filtering + MMIO visibility.
@@ -220,6 +236,12 @@ module soc_top #(
         .mem_wstrb(mem_wstrb),
         .mem_ready(irqc_ready),
         .mem_rdata(irqc_rdata),
+        .host_req_i(host_i2c_irqc_req),
+        .host_we_i(host_i2c_irqc_we),
+        .host_off_i(host_i2c_irqc_off),
+        .host_wdata_i(host_i2c_irqc_wdata),
+        .host_ready_o(host_i2c_irqc_ready),
+        .host_rdata_o(host_i2c_irqc_rdata),
         .irq_src_i(irq_sources),
         .irq_o    (irq),
         .wake_req_o(irqc_wake_req)
@@ -263,6 +285,9 @@ module soc_top #(
         .status_o(test_status),
         .code_o(test_code)
     );
+
+
+
 
     // MMIO bus response mux (to PicoRV32)
     wire mmio_ready = gpio_ready | pwr_ready | timer_ready | ml_ready | irqc_ready | test_ready;
