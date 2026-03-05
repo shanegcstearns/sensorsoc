@@ -62,20 +62,20 @@ async def load_weights_and_infer_once(dut):
     var_addr = (global_off + var_base) & 0xFFFFFFFF
 
     #print offsets
-    dut._log.info(f"global_off=0x{global_off:08X}")
-    dut._log.info(f"x_addr   =0x{x_addr:08X}  (reg 0x8C + offset)")
-    dut._log.info(f"out_addr =0x{out_addr:08X}  (reg 0x88 + offset)")
-    dut._log.info(f"var_addr =0x{var_addr:08X}  (reg 0x90 + offset)")
+    dut._log.warning(f"global_off=0x{global_off:08X}")
+    dut._log.warning(f"x_addr   =0x{x_addr:08X}  (reg 0x8C + offset)")
+    dut._log.warning(f"out_addr =0x{out_addr:08X}  (reg 0x88 + offset)")
+    dut._log.warning(f"var_addr =0x{var_addr:08X}  (reg 0x90 + offset)")
 
     # load weights from bin
     bin_path = "taketwo_params.bin"
     with open(bin_path, "rb") as f:
         param_bytes = f.read()
 
-    dut._log.info(f"Writing {len(param_bytes)} bytes of weights to var_addr=0x{var_addr:08X}")
+    dut._log.warning(f"Writing {len(param_bytes)} bytes of weights to var_addr=0x{var_addr:08X}")
     axi_ram.write(var_addr, param_bytes)
 
-    dut._log.info("Reading weights back...")
+    dut._log.warning("Reading weights back...")
     rb = axi_ram.read(var_addr, len(param_bytes))
     assert rb == param_bytes, "Comparison from written weights"
 
@@ -85,7 +85,12 @@ async def load_weights_and_infer_once(dut):
 
     # writing input vector into memory (real test data from csv)
     with open("processed_sleep_dataset.csv") as f:
-        ds = f.readlines()
+        ds = f.readlines()[:1000]
+    
+    true_n=0 
+    false_n=0 
+    false_p=0 
+    true_p = 0
     
     for line in ds:
         #print(line)
@@ -101,7 +106,7 @@ async def load_weights_and_infer_once(dut):
         # feats[2] = max(-32768, min(int((float(feats[2])/4.0) * SCALE), 32767))    #delta hr
         # feats[3] = max(-32768, min(int((float(feats[3])*20.0) * SCALE), 32767))   #rmssd
         print(feats)
-        axi_ram.write(x_addr, u16_4(feats))
+        axi_ram.write(x_addr, u16_4(feats[0:4]))
         # wait for busy to clear
         await axil.write(0x10, u32(1))
         
@@ -116,3 +121,13 @@ async def load_weights_and_infer_once(dut):
         out_bytes = axi_ram.read(out_addr, 4)
         log0, log1 = struct.unpack("<2h", out_bytes)
         print(f"logits int16: [{log0}, {log1}] (raw bytes={out_bytes.hex()})")
+        pred = int(log1) > int(log0)
+        if (pred == True and int(feats[4]) == 1):
+            true_p += 1
+        elif (pred == True and int(feats[4]) == 0):
+            false_p += 1 
+        elif (pred == False and int(feats[4]) == 1):
+            false_n += 1
+        elif (pred == False and int(feats[4]) == 0):
+            true_n += 1
+        print(f"Conf matrix: true_n: {true_n}, false_n: {false_n}, false_p: {false_p}, true_p: {true_p}")

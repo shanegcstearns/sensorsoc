@@ -1,6 +1,1695 @@
 
 
-module mlp
+module test
+(
+
+);
+
+  reg CLK;
+  reg RESETN;
+  wire irq;
+  wire [32-1:0] maxi_awaddr;
+  wire [8-1:0] maxi_awlen;
+  wire [3-1:0] maxi_awsize;
+  wire [2-1:0] maxi_awburst;
+  wire [1-1:0] maxi_awlock;
+  wire [4-1:0] maxi_awcache;
+  wire [3-1:0] maxi_awprot;
+  wire [4-1:0] maxi_awqos;
+  wire [2-1:0] maxi_awuser;
+  wire maxi_awvalid;
+  reg maxi_awready;
+  wire [32-1:0] maxi_wdata;
+  wire [4-1:0] maxi_wstrb;
+  wire maxi_wlast;
+  wire maxi_wvalid;
+  reg maxi_wready;
+  reg [2-1:0] maxi_bresp;
+  reg maxi_bvalid;
+  wire maxi_bready;
+  wire [32-1:0] maxi_araddr;
+  wire [8-1:0] maxi_arlen;
+  wire [3-1:0] maxi_arsize;
+  wire [2-1:0] maxi_arburst;
+  wire [1-1:0] maxi_arlock;
+  wire [4-1:0] maxi_arcache;
+  wire [3-1:0] maxi_arprot;
+  wire [4-1:0] maxi_arqos;
+  wire [2-1:0] maxi_aruser;
+  wire maxi_arvalid;
+  reg maxi_arready;
+  reg [32-1:0] maxi_rdata;
+  reg [2-1:0] maxi_rresp;
+  reg maxi_rlast;
+  reg maxi_rvalid;
+  wire maxi_rready;
+  reg [32-1:0] saxi_awaddr;
+  reg [4-1:0] saxi_awcache;
+  reg [3-1:0] saxi_awprot;
+  reg saxi_awvalid;
+  wire saxi_awready;
+  reg [32-1:0] saxi_wdata;
+  reg [4-1:0] saxi_wstrb;
+  reg saxi_wvalid;
+  wire saxi_wready;
+  wire [2-1:0] saxi_bresp;
+  wire saxi_bvalid;
+  reg saxi_bready;
+  reg [32-1:0] saxi_araddr;
+  reg [4-1:0] saxi_arcache;
+  reg [3-1:0] saxi_arprot;
+  reg saxi_arvalid;
+  wire saxi_arready;
+  wire [32-1:0] saxi_rdata;
+  wire [2-1:0] saxi_rresp;
+  wire saxi_rvalid;
+  reg saxi_rready;
+  wire RST;
+  assign RST = !RESETN;
+  wire [32-1:0] memory_awaddr;
+  wire [8-1:0] memory_awlen;
+  wire [3-1:0] memory_awsize;
+  wire [2-1:0] memory_awburst;
+  wire [1-1:0] memory_awlock;
+  wire [4-1:0] memory_awcache;
+  wire [3-1:0] memory_awprot;
+  wire [4-1:0] memory_awqos;
+  wire [2-1:0] memory_awuser;
+  wire memory_awvalid;
+  reg memory_awready;
+  wire [32-1:0] memory_wdata;
+  wire [4-1:0] memory_wstrb;
+  wire memory_wlast;
+  wire memory_wvalid;
+  wire memory_wready;
+  wire [2-1:0] memory_bresp;
+  reg memory_bvalid;
+  wire memory_bready;
+  assign memory_bresp = 0;
+  wire [32-1:0] memory_araddr;
+  wire [8-1:0] memory_arlen;
+  wire [3-1:0] memory_arsize;
+  wire [2-1:0] memory_arburst;
+  wire [1-1:0] memory_arlock;
+  wire [4-1:0] memory_arcache;
+  wire [3-1:0] memory_arprot;
+  wire [4-1:0] memory_arqos;
+  wire [2-1:0] memory_aruser;
+  wire memory_arvalid;
+  reg memory_arready;
+  reg [32-1:0] memory_rdata;
+  wire [2-1:0] memory_rresp;
+  reg memory_rlast;
+  reg memory_rvalid;
+  wire memory_rready;
+  assign memory_rresp = 0;
+  reg [32-1:0] _memory_waddr_fsm;
+  localparam _memory_waddr_fsm_init = 0;
+  reg [32-1:0] _memory_wdata_fsm;
+  localparam _memory_wdata_fsm_init = 0;
+  reg [32-1:0] _memory_raddr_fsm;
+  localparam _memory_raddr_fsm_init = 0;
+  reg [32-1:0] _memory_rdata_fsm;
+  localparam _memory_rdata_fsm_init = 0;
+  wire _memory_wreq_fifo_enq;
+  wire [41-1:0] _memory_wreq_fifo_wdata;
+  wire _memory_wreq_fifo_full;
+  wire _memory_wreq_fifo_almost_full;
+  wire _memory_wreq_fifo_deq;
+  wire [41-1:0] _memory_wreq_fifo_rdata;
+  wire _memory_wreq_fifo_empty;
+  wire _memory_wreq_fifo_almost_empty;
+
+  _memory_wreq_fifo
+  inst__memory_wreq_fifo
+  (
+    .CLK(CLK),
+    .RST(RST),
+    ._memory_wreq_fifo_enq(_memory_wreq_fifo_enq),
+    ._memory_wreq_fifo_wdata(_memory_wreq_fifo_wdata),
+    ._memory_wreq_fifo_full(_memory_wreq_fifo_full),
+    ._memory_wreq_fifo_almost_full(_memory_wreq_fifo_almost_full),
+    ._memory_wreq_fifo_deq(_memory_wreq_fifo_deq),
+    ._memory_wreq_fifo_rdata(_memory_wreq_fifo_rdata),
+    ._memory_wreq_fifo_empty(_memory_wreq_fifo_empty),
+    ._memory_wreq_fifo_almost_empty(_memory_wreq_fifo_almost_empty)
+  );
+
+  reg [4-1:0] count__memory_wreq_fifo;
+  wire _memory_rreq_fifo_enq;
+  wire [41-1:0] _memory_rreq_fifo_wdata;
+  wire _memory_rreq_fifo_full;
+  wire _memory_rreq_fifo_almost_full;
+  wire _memory_rreq_fifo_deq;
+  wire [41-1:0] _memory_rreq_fifo_rdata;
+  wire _memory_rreq_fifo_empty;
+  wire _memory_rreq_fifo_almost_empty;
+
+  _memory_rreq_fifo
+  inst__memory_rreq_fifo
+  (
+    .CLK(CLK),
+    .RST(RST),
+    ._memory_rreq_fifo_enq(_memory_rreq_fifo_enq),
+    ._memory_rreq_fifo_wdata(_memory_rreq_fifo_wdata),
+    ._memory_rreq_fifo_full(_memory_rreq_fifo_full),
+    ._memory_rreq_fifo_almost_full(_memory_rreq_fifo_almost_full),
+    ._memory_rreq_fifo_deq(_memory_rreq_fifo_deq),
+    ._memory_rreq_fifo_rdata(_memory_rreq_fifo_rdata),
+    ._memory_rreq_fifo_empty(_memory_rreq_fifo_empty),
+    ._memory_rreq_fifo_almost_empty(_memory_rreq_fifo_almost_empty)
+  );
+
+  reg [4-1:0] count__memory_rreq_fifo;
+  wire _memory_wdata_fifo_enq;
+  wire [37-1:0] _memory_wdata_fifo_wdata;
+  wire _memory_wdata_fifo_full;
+  wire _memory_wdata_fifo_almost_full;
+  wire _memory_wdata_fifo_deq;
+  wire [37-1:0] _memory_wdata_fifo_rdata;
+  wire _memory_wdata_fifo_empty;
+  wire _memory_wdata_fifo_almost_empty;
+
+  _memory_wdata_fifo
+  inst__memory_wdata_fifo
+  (
+    .CLK(CLK),
+    .RST(RST),
+    ._memory_wdata_fifo_enq(_memory_wdata_fifo_enq),
+    ._memory_wdata_fifo_wdata(_memory_wdata_fifo_wdata),
+    ._memory_wdata_fifo_full(_memory_wdata_fifo_full),
+    ._memory_wdata_fifo_almost_full(_memory_wdata_fifo_almost_full),
+    ._memory_wdata_fifo_deq(_memory_wdata_fifo_deq),
+    ._memory_wdata_fifo_rdata(_memory_wdata_fifo_rdata),
+    ._memory_wdata_fifo_empty(_memory_wdata_fifo_empty),
+    ._memory_wdata_fifo_almost_empty(_memory_wdata_fifo_almost_empty)
+  );
+
+  reg [4-1:0] count__memory_wdata_fifo;
+  assign memory_wready = !_memory_wdata_fifo_almost_full;
+  wire [32-1:0] pack_write_data_wdata_0;
+  wire [4-1:0] pack_write_data_wstrb_1;
+  wire [1-1:0] pack_write_data_wlast_2;
+  assign pack_write_data_wdata_0 = memory_wdata;
+  assign pack_write_data_wstrb_1 = memory_wstrb;
+  assign pack_write_data_wlast_2 = memory_wlast;
+  wire [37-1:0] pack_write_data_packed_3;
+  assign pack_write_data_packed_3 = { pack_write_data_wlast_2, pack_write_data_wstrb_1, pack_write_data_wdata_0 };
+  assign _memory_wdata_fifo_wdata = (memory_wvalid && memory_wready)? pack_write_data_packed_3 : 'hx;
+  assign _memory_wdata_fifo_enq = (memory_wvalid && memory_wready)? memory_wvalid && memory_wready && !_memory_wdata_fifo_almost_full : 0;
+  localparam _tmp_4 = 1;
+  wire [_tmp_4-1:0] _tmp_5;
+  assign _tmp_5 = !_memory_wdata_fifo_almost_full;
+  reg [_tmp_4-1:0] __tmp_5_1;
+  reg [8-1:0] _memory_mem [0:2**20-1];
+
+  initial begin
+    $readmemh("memimg_taketwo.out", _memory_mem);
+  end
+
+  reg [33-1:0] _write_count;
+  reg [32-1:0] _write_addr;
+  reg [33-1:0] _read_count;
+  reg [32-1:0] _read_addr;
+  reg [33-1:0] _sleep_interval_count;
+  reg [33-1:0] _keep_sleep_count;
+  wire [32-1:0] pack_write_req_global_addr_6;
+  wire [9-1:0] pack_write_req_size_7;
+  assign pack_write_req_global_addr_6 = memory_awaddr;
+  assign pack_write_req_size_7 = memory_awlen + 1;
+  wire [41-1:0] pack_write_req_packed_8;
+  assign pack_write_req_packed_8 = { pack_write_req_global_addr_6, pack_write_req_size_7 };
+  assign _memory_wreq_fifo_wdata = ((_memory_waddr_fsm == 11) && memory_awvalid && memory_awready)? pack_write_req_packed_8 : 'hx;
+  assign _memory_wreq_fifo_enq = ((_memory_waddr_fsm == 11) && memory_awvalid && memory_awready)? (_memory_waddr_fsm == 11) && memory_awvalid && memory_awready && !_memory_wreq_fifo_almost_full : 0;
+  localparam _tmp_9 = 1;
+  wire [_tmp_9-1:0] _tmp_10;
+  assign _tmp_10 = !_memory_wreq_fifo_almost_full;
+  reg [_tmp_9-1:0] __tmp_10_1;
+  wire [32-1:0] unpack_write_req_global_addr_11;
+  wire [9-1:0] unpack_write_req_size_12;
+  assign unpack_write_req_global_addr_11 = _memory_wreq_fifo_rdata[40:9];
+  assign unpack_write_req_size_12 = _memory_wreq_fifo_rdata[8:0];
+  assign _memory_wreq_fifo_deq = ((_memory_wdata_fsm == 0) && !_memory_wreq_fifo_empty && !_memory_wreq_fifo_empty)? 1 : 0;
+  wire [32-1:0] pack_write_data_wdata_13;
+  wire [4-1:0] pack_write_data_wstrb_14;
+  wire [1-1:0] pack_write_data_wlast_15;
+  assign pack_write_data_wdata_13 = _memory_wdata_fifo_rdata[31:0];
+  assign pack_write_data_wstrb_14 = _memory_wdata_fifo_rdata[35:32];
+  assign pack_write_data_wlast_15 = _memory_wdata_fifo_rdata[36];
+  wire write_data_wvalid_16;
+  assign write_data_wvalid_16 = !_memory_wdata_fifo_empty;
+  wire write_data_wready_17;
+  assign write_data_wready_17 = (_memory_wdata_fsm == 1) && (_sleep_interval_count != 15);
+  assign _memory_wdata_fifo_deq = (write_data_wready_17 && !_memory_wdata_fifo_empty && !_memory_wdata_fifo_empty)? 1 : 0;
+  wire [32-1:0] pack_read_req_global_addr_18;
+  wire [9-1:0] pack_read_req_size_19;
+  assign pack_read_req_global_addr_18 = memory_araddr;
+  assign pack_read_req_size_19 = memory_arlen + 1;
+  wire [41-1:0] pack_read_req_packed_20;
+  assign pack_read_req_packed_20 = { pack_read_req_global_addr_18, pack_read_req_size_19 };
+  assign _memory_rreq_fifo_wdata = ((_memory_raddr_fsm == 1) && memory_arvalid && memory_arready)? pack_read_req_packed_20 : 'hx;
+  assign _memory_rreq_fifo_enq = ((_memory_raddr_fsm == 1) && memory_arvalid && memory_arready)? (_memory_raddr_fsm == 1) && memory_arvalid && memory_arready && !_memory_rreq_fifo_almost_full : 0;
+  localparam _tmp_21 = 1;
+  wire [_tmp_21-1:0] _tmp_22;
+  assign _tmp_22 = !_memory_rreq_fifo_almost_full;
+  reg [_tmp_21-1:0] __tmp_22_1;
+  wire [32-1:0] unpack_read_req_global_addr_23;
+  wire [9-1:0] unpack_read_req_size_24;
+  assign unpack_read_req_global_addr_23 = _memory_rreq_fifo_rdata[40:9];
+  assign unpack_read_req_size_24 = _memory_rreq_fifo_rdata[8:0];
+  assign _memory_rreq_fifo_deq = ((_memory_rdata_fsm == 0) && !_memory_rreq_fifo_empty && !_memory_rreq_fifo_empty)? 1 : 0;
+  reg [32-1:0] _d1__memory_rdata_fsm;
+  reg __memory_rdata_fsm_cond_11_0_1;
+  assign memory_awaddr = maxi_awaddr;
+  assign memory_awlen = maxi_awlen;
+  assign memory_awsize = maxi_awsize;
+  assign memory_awburst = maxi_awburst;
+  assign memory_awlock = maxi_awlock;
+  assign memory_awcache = maxi_awcache;
+  assign memory_awprot = maxi_awprot;
+  assign memory_awqos = maxi_awqos;
+  assign memory_awuser = maxi_awuser;
+  assign memory_awvalid = maxi_awvalid;
+  wire _tmp_25;
+  assign _tmp_25 = memory_awready;
+
+  always @(*) begin
+    maxi_awready = _tmp_25;
+  end
+
+  assign memory_wdata = maxi_wdata;
+  assign memory_wstrb = maxi_wstrb;
+  assign memory_wlast = maxi_wlast;
+  assign memory_wvalid = maxi_wvalid;
+  wire _tmp_26;
+  assign _tmp_26 = memory_wready;
+
+  always @(*) begin
+    maxi_wready = _tmp_26;
+  end
+
+  wire [2-1:0] _tmp_27;
+  assign _tmp_27 = memory_bresp;
+
+  always @(*) begin
+    maxi_bresp = _tmp_27;
+  end
+
+  wire _tmp_28;
+  assign _tmp_28 = memory_bvalid;
+
+  always @(*) begin
+    maxi_bvalid = _tmp_28;
+  end
+
+  assign memory_bready = maxi_bready;
+  assign memory_araddr = maxi_araddr;
+  assign memory_arlen = maxi_arlen;
+  assign memory_arsize = maxi_arsize;
+  assign memory_arburst = maxi_arburst;
+  assign memory_arlock = maxi_arlock;
+  assign memory_arcache = maxi_arcache;
+  assign memory_arprot = maxi_arprot;
+  assign memory_arqos = maxi_arqos;
+  assign memory_aruser = maxi_aruser;
+  assign memory_arvalid = maxi_arvalid;
+  wire _tmp_29;
+  assign _tmp_29 = memory_arready;
+
+  always @(*) begin
+    maxi_arready = _tmp_29;
+  end
+
+  wire [32-1:0] _tmp_30;
+  assign _tmp_30 = memory_rdata;
+
+  always @(*) begin
+    maxi_rdata = _tmp_30;
+  end
+
+  wire [2-1:0] _tmp_31;
+  assign _tmp_31 = memory_rresp;
+
+  always @(*) begin
+    maxi_rresp = _tmp_31;
+  end
+
+  wire _tmp_32;
+  assign _tmp_32 = memory_rlast;
+
+  always @(*) begin
+    maxi_rlast = _tmp_32;
+  end
+
+  wire _tmp_33;
+  assign _tmp_33 = memory_rvalid;
+
+  always @(*) begin
+    maxi_rvalid = _tmp_33;
+  end
+
+  assign memory_rready = maxi_rready;
+  reg [32-1:0] _saxi_awaddr;
+  wire [4-1:0] _saxi_awcache;
+  wire [3-1:0] _saxi_awprot;
+  reg _saxi_awvalid;
+  wire _saxi_awready;
+  assign _saxi_awcache = 3;
+  assign _saxi_awprot = 0;
+  wire [32-1:0] _saxi_wdata;
+  wire [4-1:0] _saxi_wstrb;
+  wire _saxi_wvalid;
+  wire _saxi_wready;
+  reg [32-1:0] __saxi_wdata_sb_0;
+  reg [4-1:0] __saxi_wstrb_sb_0;
+  reg __saxi_wvalid_sb_0;
+  wire __saxi_wready_sb_0;
+  wire [4-1:0] _sb__saxi_writedata_s_value_34;
+  assign _sb__saxi_writedata_s_value_34 = __saxi_wstrb_sb_0;
+  wire [32-1:0] _sb__saxi_writedata_s_value_35;
+  assign _sb__saxi_writedata_s_value_35 = __saxi_wdata_sb_0;
+  wire [36-1:0] _sb__saxi_writedata_s_data_36;
+  assign _sb__saxi_writedata_s_data_36 = { _sb__saxi_writedata_s_value_34, _sb__saxi_writedata_s_value_35 };
+  wire _sb__saxi_writedata_s_valid_37;
+  assign _sb__saxi_writedata_s_valid_37 = __saxi_wvalid_sb_0;
+  wire _sb__saxi_writedata_m_ready_38;
+  assign _sb__saxi_writedata_m_ready_38 = _saxi_wready;
+  reg [36-1:0] _sb__saxi_writedata_data_39;
+  reg _sb__saxi_writedata_valid_40;
+  wire _sb__saxi_writedata_ready_41;
+  reg [36-1:0] _sb__saxi_writedata_tmp_data_42;
+  reg _sb__saxi_writedata_tmp_valid_43;
+  wire [36-1:0] _sb__saxi_writedata_next_data_44;
+  wire _sb__saxi_writedata_next_valid_45;
+  assign _sb__saxi_writedata_ready_41 = !_sb__saxi_writedata_tmp_valid_43;
+  assign _sb__saxi_writedata_next_data_44 = (_sb__saxi_writedata_tmp_valid_43)? _sb__saxi_writedata_tmp_data_42 : _sb__saxi_writedata_s_data_36;
+  assign _sb__saxi_writedata_next_valid_45 = _sb__saxi_writedata_tmp_valid_43 || _sb__saxi_writedata_s_valid_37;
+  wire [4-1:0] _sb__saxi_writedata_m_value_46;
+  assign _sb__saxi_writedata_m_value_46 = _sb__saxi_writedata_data_39[35:32];
+  wire [32-1:0] _sb__saxi_writedata_m_value_47;
+  assign _sb__saxi_writedata_m_value_47 = _sb__saxi_writedata_data_39[31:0];
+  assign __saxi_wready_sb_0 = _sb__saxi_writedata_ready_41;
+  assign _saxi_wdata = _sb__saxi_writedata_m_value_47;
+  assign _saxi_wstrb = _sb__saxi_writedata_m_value_46;
+  assign _saxi_wvalid = _sb__saxi_writedata_valid_40;
+  wire [2-1:0] _saxi_bresp;
+  wire _saxi_bvalid;
+  wire _saxi_bready;
+  assign _saxi_bready = 1;
+  reg [32-1:0] _saxi_araddr;
+  wire [4-1:0] _saxi_arcache;
+  wire [3-1:0] _saxi_arprot;
+  reg _saxi_arvalid;
+  wire _saxi_arready;
+  assign _saxi_arcache = 3;
+  assign _saxi_arprot = 0;
+  wire [32-1:0] _saxi_rdata;
+  wire [2-1:0] _saxi_rresp;
+  wire _saxi_rvalid;
+  wire _saxi_rready;
+  wire [32-1:0] __saxi_rdata_sb_0;
+  wire __saxi_rvalid_sb_0;
+  wire __saxi_rready_sb_0;
+  wire [32-1:0] _sb__saxi_readdata_s_value_48;
+  assign _sb__saxi_readdata_s_value_48 = _saxi_rdata;
+  wire [32-1:0] _sb__saxi_readdata_s_data_49;
+  assign _sb__saxi_readdata_s_data_49 = { _sb__saxi_readdata_s_value_48 };
+  wire _sb__saxi_readdata_s_valid_50;
+  assign _sb__saxi_readdata_s_valid_50 = _saxi_rvalid;
+  wire _sb__saxi_readdata_m_ready_51;
+  assign _sb__saxi_readdata_m_ready_51 = __saxi_rready_sb_0;
+  reg [32-1:0] _sb__saxi_readdata_data_52;
+  reg _sb__saxi_readdata_valid_53;
+  wire _sb__saxi_readdata_ready_54;
+  reg [32-1:0] _sb__saxi_readdata_tmp_data_55;
+  reg _sb__saxi_readdata_tmp_valid_56;
+  wire [32-1:0] _sb__saxi_readdata_next_data_57;
+  wire _sb__saxi_readdata_next_valid_58;
+  assign _sb__saxi_readdata_ready_54 = !_sb__saxi_readdata_tmp_valid_56;
+  assign _sb__saxi_readdata_next_data_57 = (_sb__saxi_readdata_tmp_valid_56)? _sb__saxi_readdata_tmp_data_55 : _sb__saxi_readdata_s_data_49;
+  assign _sb__saxi_readdata_next_valid_58 = _sb__saxi_readdata_tmp_valid_56 || _sb__saxi_readdata_s_valid_50;
+  wire [32-1:0] _sb__saxi_readdata_m_value_59;
+  assign _sb__saxi_readdata_m_value_59 = _sb__saxi_readdata_data_52[31:0];
+  assign __saxi_rdata_sb_0 = _sb__saxi_readdata_m_value_59;
+  assign __saxi_rvalid_sb_0 = _sb__saxi_readdata_valid_53;
+  assign _saxi_rready = _sb__saxi_readdata_ready_54;
+  reg [3-1:0] __saxi_outstanding_wcount;
+  wire __saxi_has_outstanding_write;
+  assign __saxi_has_outstanding_write = (__saxi_outstanding_wcount > 0) || _saxi_awvalid;
+  wire [32-1:0] _tmp_60;
+  assign _tmp_60 = _saxi_awaddr;
+
+  always @(*) begin
+    saxi_awaddr = _tmp_60;
+  end
+
+  wire [4-1:0] _tmp_61;
+  assign _tmp_61 = _saxi_awcache;
+
+  always @(*) begin
+    saxi_awcache = _tmp_61;
+  end
+
+  wire [3-1:0] _tmp_62;
+  assign _tmp_62 = _saxi_awprot;
+
+  always @(*) begin
+    saxi_awprot = _tmp_62;
+  end
+
+  wire _tmp_63;
+  assign _tmp_63 = _saxi_awvalid;
+
+  always @(*) begin
+    saxi_awvalid = _tmp_63;
+  end
+
+  assign _saxi_awready = saxi_awready;
+  wire [32-1:0] _tmp_64;
+  assign _tmp_64 = _saxi_wdata;
+
+  always @(*) begin
+    saxi_wdata = _tmp_64;
+  end
+
+  wire [4-1:0] _tmp_65;
+  assign _tmp_65 = _saxi_wstrb;
+
+  always @(*) begin
+    saxi_wstrb = _tmp_65;
+  end
+
+  wire _tmp_66;
+  assign _tmp_66 = _saxi_wvalid;
+
+  always @(*) begin
+    saxi_wvalid = _tmp_66;
+  end
+
+  assign _saxi_wready = saxi_wready;
+  assign _saxi_bresp = saxi_bresp;
+  assign _saxi_bvalid = saxi_bvalid;
+  wire _tmp_67;
+  assign _tmp_67 = _saxi_bready;
+
+  always @(*) begin
+    saxi_bready = _tmp_67;
+  end
+
+  wire [32-1:0] _tmp_68;
+  assign _tmp_68 = _saxi_araddr;
+
+  always @(*) begin
+    saxi_araddr = _tmp_68;
+  end
+
+  wire [4-1:0] _tmp_69;
+  assign _tmp_69 = _saxi_arcache;
+
+  always @(*) begin
+    saxi_arcache = _tmp_69;
+  end
+
+  wire [3-1:0] _tmp_70;
+  assign _tmp_70 = _saxi_arprot;
+
+  always @(*) begin
+    saxi_arprot = _tmp_70;
+  end
+
+  wire _tmp_71;
+  assign _tmp_71 = _saxi_arvalid;
+
+  always @(*) begin
+    saxi_arvalid = _tmp_71;
+  end
+
+  assign _saxi_arready = saxi_arready;
+  assign _saxi_rdata = saxi_rdata;
+  assign _saxi_rresp = saxi_rresp;
+  assign _saxi_rvalid = saxi_rvalid;
+  wire _tmp_72;
+  assign _tmp_72 = _saxi_rready;
+
+  always @(*) begin
+    saxi_rready = _tmp_72;
+  end
+
+  reg [32-1:0] time_counter;
+  reg [32-1:0] th_ctrl;
+  localparam th_ctrl_init = 0;
+  reg signed [32-1:0] _th_ctrl___0;
+  reg __saxi_waddr_cond_0_1;
+  reg __saxi_wdata_cond_0_1;
+  reg signed [32-1:0] _th_ctrl_start_time_1;
+  reg __saxi_waddr_cond_1_1;
+  reg __saxi_wdata_cond_1_1;
+  reg __saxi_raddr_cond_0_1;
+  reg signed [32-1:0] axim_rdata_73;
+  reg __saxi_raddr_cond_1_1;
+  reg signed [32-1:0] axim_rdata_74;
+  assign __saxi_rready_sb_0 = (th_ctrl == 17) || (th_ctrl == 22);
+  reg signed [32-1:0] _th_ctrl_end_time_2;
+  reg signed [32-1:0] _th_ctrl_ok_3;
+  reg signed [32-1:0] _th_ctrl_bat_4;
+  reg signed [32-1:0] _th_ctrl_i_5;
+  reg signed [16-1:0] rdata_75;
+  reg signed [32-1:0] _th_ctrl_orig_6;
+  reg signed [16-1:0] rdata_76;
+  reg signed [32-1:0] _th_ctrl_check_7;
+
+  taketwo
+  taketwo
+  (
+    .CLK(CLK),
+    .RESETN(RESETN),
+    .irq(irq),
+    .maxi_awaddr(maxi_awaddr),
+    .maxi_awlen(maxi_awlen),
+    .maxi_awsize(maxi_awsize),
+    .maxi_awburst(maxi_awburst),
+    .maxi_awlock(maxi_awlock),
+    .maxi_awcache(maxi_awcache),
+    .maxi_awprot(maxi_awprot),
+    .maxi_awqos(maxi_awqos),
+    .maxi_awuser(maxi_awuser),
+    .maxi_awvalid(maxi_awvalid),
+    .maxi_awready(maxi_awready),
+    .maxi_wdata(maxi_wdata),
+    .maxi_wstrb(maxi_wstrb),
+    .maxi_wlast(maxi_wlast),
+    .maxi_wvalid(maxi_wvalid),
+    .maxi_wready(maxi_wready),
+    .maxi_bresp(maxi_bresp),
+    .maxi_bvalid(maxi_bvalid),
+    .maxi_bready(maxi_bready),
+    .maxi_araddr(maxi_araddr),
+    .maxi_arlen(maxi_arlen),
+    .maxi_arsize(maxi_arsize),
+    .maxi_arburst(maxi_arburst),
+    .maxi_arlock(maxi_arlock),
+    .maxi_arcache(maxi_arcache),
+    .maxi_arprot(maxi_arprot),
+    .maxi_arqos(maxi_arqos),
+    .maxi_aruser(maxi_aruser),
+    .maxi_arvalid(maxi_arvalid),
+    .maxi_arready(maxi_arready),
+    .maxi_rdata(maxi_rdata),
+    .maxi_rresp(maxi_rresp),
+    .maxi_rlast(maxi_rlast),
+    .maxi_rvalid(maxi_rvalid),
+    .maxi_rready(maxi_rready),
+    .saxi_awaddr(saxi_awaddr),
+    .saxi_awcache(saxi_awcache),
+    .saxi_awprot(saxi_awprot),
+    .saxi_awvalid(saxi_awvalid),
+    .saxi_awready(saxi_awready),
+    .saxi_wdata(saxi_wdata),
+    .saxi_wstrb(saxi_wstrb),
+    .saxi_wvalid(saxi_wvalid),
+    .saxi_wready(saxi_wready),
+    .saxi_bresp(saxi_bresp),
+    .saxi_bvalid(saxi_bvalid),
+    .saxi_bready(saxi_bready),
+    .saxi_araddr(saxi_araddr),
+    .saxi_arcache(saxi_arcache),
+    .saxi_arprot(saxi_arprot),
+    .saxi_arvalid(saxi_arvalid),
+    .saxi_arready(saxi_arready),
+    .saxi_rdata(saxi_rdata),
+    .saxi_rresp(saxi_rresp),
+    .saxi_rvalid(saxi_rvalid),
+    .saxi_rready(saxi_rready)
+  );
+
+
+  initial begin
+    CLK = 0;
+    forever begin
+      #5 CLK = !CLK;
+    end
+  end
+
+
+  initial begin
+    RESETN = 1;
+    memory_awready = 0;
+    memory_bvalid = 0;
+    memory_arready = 0;
+    memory_rdata = 0;
+    memory_rlast = 0;
+    memory_rvalid = 0;
+    _memory_waddr_fsm = _memory_waddr_fsm_init;
+    _memory_wdata_fsm = _memory_wdata_fsm_init;
+    _memory_raddr_fsm = _memory_raddr_fsm_init;
+    _memory_rdata_fsm = _memory_rdata_fsm_init;
+    count__memory_wreq_fifo = 0;
+    count__memory_rreq_fifo = 0;
+    count__memory_wdata_fifo = 0;
+    __tmp_5_1 = 0;
+    _write_count = 0;
+    _write_addr = 0;
+    _read_count = 0;
+    _read_addr = 0;
+    _sleep_interval_count = 0;
+    _keep_sleep_count = 0;
+    __tmp_10_1 = 0;
+    __tmp_22_1 = 0;
+    _d1__memory_rdata_fsm = _memory_rdata_fsm_init;
+    __memory_rdata_fsm_cond_11_0_1 = 0;
+    _saxi_awaddr = 0;
+    _saxi_awvalid = 0;
+    __saxi_wdata_sb_0 = 0;
+    __saxi_wstrb_sb_0 = 0;
+    __saxi_wvalid_sb_0 = 0;
+    _sb__saxi_writedata_data_39 = 0;
+    _sb__saxi_writedata_valid_40 = 0;
+    _sb__saxi_writedata_tmp_data_42 = 0;
+    _sb__saxi_writedata_tmp_valid_43 = 0;
+    _saxi_araddr = 0;
+    _saxi_arvalid = 0;
+    _sb__saxi_readdata_data_52 = 0;
+    _sb__saxi_readdata_valid_53 = 0;
+    _sb__saxi_readdata_tmp_data_55 = 0;
+    _sb__saxi_readdata_tmp_valid_56 = 0;
+    __saxi_outstanding_wcount = 0;
+    time_counter = 0;
+    th_ctrl = th_ctrl_init;
+    _th_ctrl___0 = 0;
+    __saxi_waddr_cond_0_1 = 0;
+    __saxi_wdata_cond_0_1 = 0;
+    _th_ctrl_start_time_1 = 0;
+    __saxi_waddr_cond_1_1 = 0;
+    __saxi_wdata_cond_1_1 = 0;
+    __saxi_raddr_cond_0_1 = 0;
+    axim_rdata_73 = 0;
+    __saxi_raddr_cond_1_1 = 0;
+    axim_rdata_74 = 0;
+    _th_ctrl_end_time_2 = 0;
+    _th_ctrl_ok_3 = 0;
+    _th_ctrl_bat_4 = 0;
+    _th_ctrl_i_5 = 0;
+    rdata_75 = 0;
+    _th_ctrl_orig_6 = 0;
+    rdata_76 = 0;
+    _th_ctrl_check_7 = 0;
+    #100;
+    RESETN = 0;
+    #100;
+    RESETN = 1;
+    #10000000;
+    $finish;
+  end
+
+
+  initial begin
+    $dumpfile("/home/jfriday/sensorsoc/ML/waveform_m1rhfb9q.vcd");
+    $dumpvars(0, "taketwo");
+  end
+
+
+  always @(posedge CLK) begin
+    if(RST) begin
+      _keep_sleep_count <= 0;
+      _sleep_interval_count <= 0;
+    end else begin
+      if(_sleep_interval_count == 15) begin
+        _keep_sleep_count <= _keep_sleep_count + 1;
+      end 
+      if((_sleep_interval_count == 15) && (_keep_sleep_count == 3)) begin
+        _keep_sleep_count <= 0;
+      end 
+      if(_sleep_interval_count < 15) begin
+        _sleep_interval_count <= _sleep_interval_count + 1;
+      end 
+      if((_keep_sleep_count == 3) && (_sleep_interval_count == 15)) begin
+        _sleep_interval_count <= 0;
+      end 
+      if((_memory_wdata_fsm == 1) && write_data_wvalid_16 && write_data_wready_17 && pack_write_data_wstrb_14[0]) begin
+        _memory_mem[_write_addr + 0] <= pack_write_data_wdata_13[7:0];
+      end 
+      if((_memory_wdata_fsm == 1) && write_data_wvalid_16 && write_data_wready_17 && pack_write_data_wstrb_14[1]) begin
+        _memory_mem[_write_addr + 1] <= pack_write_data_wdata_13[15:8];
+      end 
+      if((_memory_wdata_fsm == 1) && write_data_wvalid_16 && write_data_wready_17 && pack_write_data_wstrb_14[2]) begin
+        _memory_mem[_write_addr + 2] <= pack_write_data_wdata_13[23:16];
+      end 
+      if((_memory_wdata_fsm == 1) && write_data_wvalid_16 && write_data_wready_17 && pack_write_data_wstrb_14[3]) begin
+        _memory_mem[_write_addr + 3] <= pack_write_data_wdata_13[31:24];
+      end 
+    end
+  end
+
+  localparam _memory_waddr_fsm_1 = 1;
+  localparam _memory_waddr_fsm_2 = 2;
+  localparam _memory_waddr_fsm_3 = 3;
+  localparam _memory_waddr_fsm_4 = 4;
+  localparam _memory_waddr_fsm_5 = 5;
+  localparam _memory_waddr_fsm_6 = 6;
+  localparam _memory_waddr_fsm_7 = 7;
+  localparam _memory_waddr_fsm_8 = 8;
+  localparam _memory_waddr_fsm_9 = 9;
+  localparam _memory_waddr_fsm_10 = 10;
+  localparam _memory_waddr_fsm_11 = 11;
+
+  always @(posedge CLK) begin
+    if(RST) begin
+      _memory_waddr_fsm <= _memory_waddr_fsm_init;
+      memory_awready <= 0;
+    end else begin
+      case(_memory_waddr_fsm)
+        _memory_waddr_fsm_init: begin
+          memory_awready <= 0;
+          if(memory_awvalid) begin
+            _memory_waddr_fsm <= _memory_waddr_fsm_1;
+          end 
+        end
+        _memory_waddr_fsm_1: begin
+          _memory_waddr_fsm <= _memory_waddr_fsm_2;
+        end
+        _memory_waddr_fsm_2: begin
+          _memory_waddr_fsm <= _memory_waddr_fsm_3;
+        end
+        _memory_waddr_fsm_3: begin
+          _memory_waddr_fsm <= _memory_waddr_fsm_4;
+        end
+        _memory_waddr_fsm_4: begin
+          _memory_waddr_fsm <= _memory_waddr_fsm_5;
+        end
+        _memory_waddr_fsm_5: begin
+          _memory_waddr_fsm <= _memory_waddr_fsm_6;
+        end
+        _memory_waddr_fsm_6: begin
+          _memory_waddr_fsm <= _memory_waddr_fsm_7;
+        end
+        _memory_waddr_fsm_7: begin
+          _memory_waddr_fsm <= _memory_waddr_fsm_8;
+        end
+        _memory_waddr_fsm_8: begin
+          _memory_waddr_fsm <= _memory_waddr_fsm_9;
+        end
+        _memory_waddr_fsm_9: begin
+          _memory_waddr_fsm <= _memory_waddr_fsm_10;
+        end
+        _memory_waddr_fsm_10: begin
+          _memory_waddr_fsm <= _memory_waddr_fsm_11;
+        end
+        _memory_waddr_fsm_11: begin
+          if(!_memory_wreq_fifo_almost_full) begin
+            memory_awready <= 1;
+          end 
+          if(memory_awvalid && memory_awready) begin
+            memory_awready <= 0;
+          end 
+          if(!memory_awvalid) begin
+            _memory_waddr_fsm <= _memory_waddr_fsm_init;
+          end 
+          if(memory_awvalid && memory_awready) begin
+            _memory_waddr_fsm <= _memory_waddr_fsm_init;
+          end 
+        end
+      endcase
+    end
+  end
+
+  localparam _memory_wdata_fsm_1 = 1;
+
+  always @(posedge CLK) begin
+    if(RST) begin
+      _memory_wdata_fsm <= _memory_wdata_fsm_init;
+      memory_bvalid <= 0;
+      _write_addr <= 0;
+      _write_count <= 0;
+    end else begin
+      case(_memory_wdata_fsm)
+        _memory_wdata_fsm_init: begin
+          memory_bvalid <= 0;
+          if(!_memory_wreq_fifo_empty) begin
+            _write_addr <= unpack_write_req_global_addr_11;
+            _write_count <= unpack_write_req_size_12;
+          end 
+          if(!_memory_wreq_fifo_empty) begin
+            _memory_wdata_fsm <= _memory_wdata_fsm_1;
+          end 
+        end
+        _memory_wdata_fsm_1: begin
+          if(write_data_wvalid_16 && write_data_wready_17) begin
+            _write_addr <= _write_addr + 4;
+            _write_count <= _write_count - 1;
+          end 
+          if(write_data_wvalid_16 && write_data_wready_17 && (_write_count == 1)) begin
+            memory_bvalid <= 1;
+          end 
+          if(write_data_wvalid_16 && write_data_wready_17 && pack_write_data_wlast_15) begin
+            memory_bvalid <= 1;
+          end 
+          if(write_data_wvalid_16 && write_data_wready_17 && (_write_count == 1)) begin
+            _memory_wdata_fsm <= _memory_wdata_fsm_init;
+          end 
+          if(write_data_wvalid_16 && write_data_wready_17 && pack_write_data_wlast_15) begin
+            _memory_wdata_fsm <= _memory_wdata_fsm_init;
+          end 
+        end
+      endcase
+    end
+  end
+
+  localparam _memory_raddr_fsm_1 = 1;
+
+  always @(posedge CLK) begin
+    if(RST) begin
+      _memory_raddr_fsm <= _memory_raddr_fsm_init;
+      memory_arready <= 0;
+    end else begin
+      case(_memory_raddr_fsm)
+        _memory_raddr_fsm_init: begin
+          memory_arready <= 0;
+          if(memory_arvalid) begin
+            _memory_raddr_fsm <= _memory_raddr_fsm_1;
+          end 
+        end
+        _memory_raddr_fsm_1: begin
+          if(!_memory_rreq_fifo_almost_full) begin
+            memory_arready <= 1;
+          end 
+          if(memory_arvalid && memory_arready) begin
+            memory_arready <= 0;
+          end 
+          if(!memory_arvalid) begin
+            _memory_raddr_fsm <= _memory_raddr_fsm_init;
+          end 
+          if(memory_arvalid && memory_arready) begin
+            _memory_raddr_fsm <= _memory_raddr_fsm_init;
+          end 
+        end
+      endcase
+    end
+  end
+
+  localparam _memory_rdata_fsm_1 = 1;
+  localparam _memory_rdata_fsm_2 = 2;
+  localparam _memory_rdata_fsm_3 = 3;
+  localparam _memory_rdata_fsm_4 = 4;
+  localparam _memory_rdata_fsm_5 = 5;
+  localparam _memory_rdata_fsm_6 = 6;
+  localparam _memory_rdata_fsm_7 = 7;
+  localparam _memory_rdata_fsm_8 = 8;
+  localparam _memory_rdata_fsm_9 = 9;
+  localparam _memory_rdata_fsm_10 = 10;
+  localparam _memory_rdata_fsm_11 = 11;
+
+  always @(posedge CLK) begin
+    if(RST) begin
+      _memory_rdata_fsm <= _memory_rdata_fsm_init;
+      _d1__memory_rdata_fsm <= _memory_rdata_fsm_init;
+      _read_addr <= 0;
+      _read_count <= 0;
+      memory_rdata[7:0] <= (0 >> 0) & { 8{ 1'd1 } };
+      memory_rdata[15:8] <= (0 >> 8) & { 8{ 1'd1 } };
+      memory_rdata[23:16] <= (0 >> 16) & { 8{ 1'd1 } };
+      memory_rdata[31:24] <= (0 >> 24) & { 8{ 1'd1 } };
+      memory_rvalid <= 0;
+      memory_rlast <= 0;
+      __memory_rdata_fsm_cond_11_0_1 <= 0;
+      memory_rdata <= 0;
+    end else begin
+      _d1__memory_rdata_fsm <= _memory_rdata_fsm;
+      case(_d1__memory_rdata_fsm)
+        _memory_rdata_fsm_11: begin
+          if(__memory_rdata_fsm_cond_11_0_1) begin
+            memory_rvalid <= 0;
+            memory_rlast <= 0;
+          end 
+        end
+      endcase
+      case(_memory_rdata_fsm)
+        _memory_rdata_fsm_init: begin
+          if(!_memory_rreq_fifo_empty) begin
+            _read_addr <= unpack_read_req_global_addr_23;
+            _read_count <= unpack_read_req_size_24;
+          end 
+          if(!_memory_rreq_fifo_empty) begin
+            _memory_rdata_fsm <= _memory_rdata_fsm_1;
+          end 
+        end
+        _memory_rdata_fsm_1: begin
+          _memory_rdata_fsm <= _memory_rdata_fsm_2;
+        end
+        _memory_rdata_fsm_2: begin
+          _memory_rdata_fsm <= _memory_rdata_fsm_3;
+        end
+        _memory_rdata_fsm_3: begin
+          _memory_rdata_fsm <= _memory_rdata_fsm_4;
+        end
+        _memory_rdata_fsm_4: begin
+          _memory_rdata_fsm <= _memory_rdata_fsm_5;
+        end
+        _memory_rdata_fsm_5: begin
+          _memory_rdata_fsm <= _memory_rdata_fsm_6;
+        end
+        _memory_rdata_fsm_6: begin
+          _memory_rdata_fsm <= _memory_rdata_fsm_7;
+        end
+        _memory_rdata_fsm_7: begin
+          _memory_rdata_fsm <= _memory_rdata_fsm_8;
+        end
+        _memory_rdata_fsm_8: begin
+          _memory_rdata_fsm <= _memory_rdata_fsm_9;
+        end
+        _memory_rdata_fsm_9: begin
+          _memory_rdata_fsm <= _memory_rdata_fsm_10;
+        end
+        _memory_rdata_fsm_10: begin
+          _memory_rdata_fsm <= _memory_rdata_fsm_11;
+        end
+        _memory_rdata_fsm_11: begin
+          if(memory_rready | !memory_rvalid) begin
+            memory_rdata[7:0] <= _memory_mem[_read_addr + 0];
+          end 
+          if(memory_rready | !memory_rvalid) begin
+            memory_rdata[15:8] <= _memory_mem[_read_addr + 1];
+          end 
+          if(memory_rready | !memory_rvalid) begin
+            memory_rdata[23:16] <= _memory_mem[_read_addr + 2];
+          end 
+          if(memory_rready | !memory_rvalid) begin
+            memory_rdata[31:24] <= _memory_mem[_read_addr + 3];
+          end 
+          if((_sleep_interval_count < 15) && (_read_count > 0) && memory_rready | !memory_rvalid) begin
+            memory_rvalid <= 1;
+            _read_addr <= _read_addr + 4;
+            _read_count <= _read_count - 1;
+          end 
+          if((_sleep_interval_count < 15) && (_read_count == 1) && memory_rready | !memory_rvalid) begin
+            memory_rlast <= 1;
+          end 
+          __memory_rdata_fsm_cond_11_0_1 <= 1;
+          if(memory_rvalid && !memory_rready) begin
+            memory_rvalid <= memory_rvalid;
+            memory_rdata <= memory_rdata;
+            memory_rlast <= memory_rlast;
+          end 
+          if(memory_rvalid && memory_rready && (_read_count == 0)) begin
+            _memory_rdata_fsm <= _memory_rdata_fsm_init;
+          end 
+        end
+      endcase
+    end
+  end
+
+
+  always @(posedge CLK) begin
+    if(RST) begin
+      count__memory_wreq_fifo <= 0;
+      __tmp_10_1 <= 0;
+    end else begin
+      if(_memory_wreq_fifo_enq && !_memory_wreq_fifo_full && (_memory_wreq_fifo_deq && !_memory_wreq_fifo_empty)) begin
+        count__memory_wreq_fifo <= count__memory_wreq_fifo;
+      end else if(_memory_wreq_fifo_enq && !_memory_wreq_fifo_full) begin
+        count__memory_wreq_fifo <= count__memory_wreq_fifo + 1;
+      end else if(_memory_wreq_fifo_deq && !_memory_wreq_fifo_empty) begin
+        count__memory_wreq_fifo <= count__memory_wreq_fifo - 1;
+      end 
+      __tmp_10_1 <= _tmp_10;
+    end
+  end
+
+
+  always @(posedge CLK) begin
+    if(RST) begin
+      count__memory_rreq_fifo <= 0;
+      __tmp_22_1 <= 0;
+    end else begin
+      if(_memory_rreq_fifo_enq && !_memory_rreq_fifo_full && (_memory_rreq_fifo_deq && !_memory_rreq_fifo_empty)) begin
+        count__memory_rreq_fifo <= count__memory_rreq_fifo;
+      end else if(_memory_rreq_fifo_enq && !_memory_rreq_fifo_full) begin
+        count__memory_rreq_fifo <= count__memory_rreq_fifo + 1;
+      end else if(_memory_rreq_fifo_deq && !_memory_rreq_fifo_empty) begin
+        count__memory_rreq_fifo <= count__memory_rreq_fifo - 1;
+      end 
+      __tmp_22_1 <= _tmp_22;
+    end
+  end
+
+
+  always @(posedge CLK) begin
+    if(RST) begin
+      count__memory_wdata_fifo <= 0;
+      __tmp_5_1 <= 0;
+    end else begin
+      if(_memory_wdata_fifo_enq && !_memory_wdata_fifo_full && (_memory_wdata_fifo_deq && !_memory_wdata_fifo_empty)) begin
+        count__memory_wdata_fifo <= count__memory_wdata_fifo;
+      end else if(_memory_wdata_fifo_enq && !_memory_wdata_fifo_full) begin
+        count__memory_wdata_fifo <= count__memory_wdata_fifo + 1;
+      end else if(_memory_wdata_fifo_deq && !_memory_wdata_fifo_empty) begin
+        count__memory_wdata_fifo <= count__memory_wdata_fifo - 1;
+      end 
+      __tmp_5_1 <= _tmp_5;
+    end
+  end
+
+
+  always @(posedge CLK) begin
+    if(RST) begin
+      _saxi_awaddr <= 0;
+      _saxi_awvalid <= 0;
+      __saxi_waddr_cond_0_1 <= 0;
+      __saxi_waddr_cond_1_1 <= 0;
+    end else begin
+      if(__saxi_waddr_cond_0_1) begin
+        _saxi_awvalid <= 0;
+      end 
+      if(__saxi_waddr_cond_1_1) begin
+        _saxi_awvalid <= 0;
+      end 
+      if((th_ctrl == 4) && ((__saxi_outstanding_wcount == 0) && (_saxi_awready || !_saxi_awvalid))) begin
+        _saxi_awaddr <= 132;
+        _saxi_awvalid <= 1;
+      end 
+      __saxi_waddr_cond_0_1 <= 1;
+      if(_saxi_awvalid && !_saxi_awready) begin
+        _saxi_awvalid <= _saxi_awvalid;
+      end 
+      if((th_ctrl == 10) && ((__saxi_outstanding_wcount == 0) && (_saxi_awready || !_saxi_awvalid))) begin
+        _saxi_awaddr <= 16;
+        _saxi_awvalid <= 1;
+      end 
+      __saxi_waddr_cond_1_1 <= 1;
+      if(_saxi_awvalid && !_saxi_awready) begin
+        _saxi_awvalid <= _saxi_awvalid;
+      end 
+    end
+  end
+
+
+  always @(posedge CLK) begin
+    if(RST) begin
+      __saxi_wdata_sb_0 <= 0;
+      __saxi_wvalid_sb_0 <= 0;
+      __saxi_wstrb_sb_0 <= 0;
+      __saxi_wdata_cond_0_1 <= 0;
+      __saxi_wdata_cond_1_1 <= 0;
+    end else begin
+      if(__saxi_wdata_cond_0_1) begin
+        __saxi_wvalid_sb_0 <= 0;
+      end 
+      if(__saxi_wdata_cond_1_1) begin
+        __saxi_wvalid_sb_0 <= 0;
+      end 
+      if((th_ctrl == 6) && (__saxi_wready_sb_0 || !__saxi_wvalid_sb_0)) begin
+        __saxi_wdata_sb_0 <= 5568;
+        __saxi_wvalid_sb_0 <= 1;
+        __saxi_wstrb_sb_0 <= { 4{ 1'd1 } };
+      end 
+      __saxi_wdata_cond_0_1 <= 1;
+      if(__saxi_wvalid_sb_0 && !__saxi_wready_sb_0) begin
+        __saxi_wvalid_sb_0 <= __saxi_wvalid_sb_0;
+      end 
+      if((th_ctrl == 12) && (__saxi_wready_sb_0 || !__saxi_wvalid_sb_0)) begin
+        __saxi_wdata_sb_0 <= 1;
+        __saxi_wvalid_sb_0 <= 1;
+        __saxi_wstrb_sb_0 <= { 4{ 1'd1 } };
+      end 
+      __saxi_wdata_cond_1_1 <= 1;
+      if(__saxi_wvalid_sb_0 && !__saxi_wready_sb_0) begin
+        __saxi_wvalid_sb_0 <= __saxi_wvalid_sb_0;
+      end 
+    end
+  end
+
+
+  always @(posedge CLK) begin
+    if(RST) begin
+      _sb__saxi_writedata_data_39 <= 0;
+      _sb__saxi_writedata_valid_40 <= 0;
+      _sb__saxi_writedata_tmp_data_42 <= 0;
+      _sb__saxi_writedata_tmp_valid_43 <= 0;
+    end else begin
+      if(_sb__saxi_writedata_m_ready_38 || !_sb__saxi_writedata_valid_40) begin
+        _sb__saxi_writedata_data_39 <= _sb__saxi_writedata_next_data_44;
+        _sb__saxi_writedata_valid_40 <= _sb__saxi_writedata_next_valid_45;
+      end 
+      if(!_sb__saxi_writedata_tmp_valid_43 && _sb__saxi_writedata_valid_40 && !_sb__saxi_writedata_m_ready_38) begin
+        _sb__saxi_writedata_tmp_data_42 <= _sb__saxi_writedata_s_data_36;
+        _sb__saxi_writedata_tmp_valid_43 <= _sb__saxi_writedata_s_valid_37;
+      end 
+      if(_sb__saxi_writedata_tmp_valid_43 && _sb__saxi_writedata_m_ready_38) begin
+        _sb__saxi_writedata_tmp_valid_43 <= 0;
+      end 
+    end
+  end
+
+
+  always @(posedge CLK) begin
+    if(RST) begin
+      _saxi_araddr <= 0;
+      _saxi_arvalid <= 0;
+      __saxi_raddr_cond_0_1 <= 0;
+      __saxi_raddr_cond_1_1 <= 0;
+    end else begin
+      if(__saxi_raddr_cond_0_1) begin
+        _saxi_arvalid <= 0;
+      end 
+      if(__saxi_raddr_cond_1_1) begin
+        _saxi_arvalid <= 0;
+      end 
+      if((th_ctrl == 15) && (_saxi_arready || !_saxi_arvalid)) begin
+        _saxi_araddr <= 16;
+        _saxi_arvalid <= 1;
+      end 
+      __saxi_raddr_cond_0_1 <= 1;
+      if(_saxi_arvalid && !_saxi_arready) begin
+        _saxi_arvalid <= _saxi_arvalid;
+      end 
+      if((th_ctrl == 20) && (_saxi_arready || !_saxi_arvalid)) begin
+        _saxi_araddr <= 20;
+        _saxi_arvalid <= 1;
+      end 
+      __saxi_raddr_cond_1_1 <= 1;
+      if(_saxi_arvalid && !_saxi_arready) begin
+        _saxi_arvalid <= _saxi_arvalid;
+      end 
+    end
+  end
+
+
+  always @(posedge CLK) begin
+    if(RST) begin
+      _sb__saxi_readdata_data_52 <= 0;
+      _sb__saxi_readdata_valid_53 <= 0;
+      _sb__saxi_readdata_tmp_data_55 <= 0;
+      _sb__saxi_readdata_tmp_valid_56 <= 0;
+    end else begin
+      if(_sb__saxi_readdata_m_ready_51 || !_sb__saxi_readdata_valid_53) begin
+        _sb__saxi_readdata_data_52 <= _sb__saxi_readdata_next_data_57;
+        _sb__saxi_readdata_valid_53 <= _sb__saxi_readdata_next_valid_58;
+      end 
+      if(!_sb__saxi_readdata_tmp_valid_56 && _sb__saxi_readdata_valid_53 && !_sb__saxi_readdata_m_ready_51) begin
+        _sb__saxi_readdata_tmp_data_55 <= _sb__saxi_readdata_s_data_49;
+        _sb__saxi_readdata_tmp_valid_56 <= _sb__saxi_readdata_s_valid_50;
+      end 
+      if(_sb__saxi_readdata_tmp_valid_56 && _sb__saxi_readdata_m_ready_51) begin
+        _sb__saxi_readdata_tmp_valid_56 <= 0;
+      end 
+    end
+  end
+
+
+  always @(posedge CLK) begin
+    if(RST) begin
+      __saxi_outstanding_wcount <= 0;
+    end else begin
+      if(_saxi_awvalid && _saxi_awready && !(_saxi_bvalid && _saxi_bready) && (__saxi_outstanding_wcount < 7)) begin
+        __saxi_outstanding_wcount <= __saxi_outstanding_wcount + 1;
+      end 
+      if(!(_saxi_awvalid && _saxi_awready) && (_saxi_bvalid && _saxi_bready) && (__saxi_outstanding_wcount > 0)) begin
+        __saxi_outstanding_wcount <= __saxi_outstanding_wcount - 1;
+      end 
+    end
+  end
+
+
+  always @(posedge CLK) begin
+    if(RST) begin
+      time_counter <= 0;
+    end else begin
+      time_counter <= time_counter + 1;
+    end
+  end
+
+  localparam th_ctrl_1 = 1;
+  localparam th_ctrl_2 = 2;
+  localparam th_ctrl_3 = 3;
+  localparam th_ctrl_4 = 4;
+  localparam th_ctrl_5 = 5;
+  localparam th_ctrl_6 = 6;
+  localparam th_ctrl_7 = 7;
+  localparam th_ctrl_8 = 8;
+  localparam th_ctrl_9 = 9;
+  localparam th_ctrl_10 = 10;
+  localparam th_ctrl_11 = 11;
+  localparam th_ctrl_12 = 12;
+  localparam th_ctrl_13 = 13;
+  localparam th_ctrl_14 = 14;
+  localparam th_ctrl_15 = 15;
+  localparam th_ctrl_16 = 16;
+  localparam th_ctrl_17 = 17;
+  localparam th_ctrl_18 = 18;
+  localparam th_ctrl_19 = 19;
+  localparam th_ctrl_20 = 20;
+  localparam th_ctrl_21 = 21;
+  localparam th_ctrl_22 = 22;
+  localparam th_ctrl_23 = 23;
+  localparam th_ctrl_24 = 24;
+  localparam th_ctrl_25 = 25;
+  localparam th_ctrl_26 = 26;
+  localparam th_ctrl_27 = 27;
+  localparam th_ctrl_28 = 28;
+  localparam th_ctrl_29 = 29;
+  localparam th_ctrl_30 = 30;
+  localparam th_ctrl_31 = 31;
+  localparam th_ctrl_32 = 32;
+  localparam th_ctrl_33 = 33;
+  localparam th_ctrl_34 = 34;
+  localparam th_ctrl_35 = 35;
+  localparam th_ctrl_36 = 36;
+  localparam th_ctrl_37 = 37;
+  localparam th_ctrl_38 = 38;
+  localparam th_ctrl_39 = 39;
+  localparam th_ctrl_40 = 40;
+  localparam th_ctrl_41 = 41;
+  localparam th_ctrl_42 = 42;
+  localparam th_ctrl_43 = 43;
+  localparam th_ctrl_44 = 44;
+  localparam th_ctrl_45 = 45;
+  localparam th_ctrl_46 = 46;
+  localparam th_ctrl_47 = 47;
+  localparam th_ctrl_48 = 48;
+
+  always @(posedge CLK) begin
+    if(RST) begin
+      th_ctrl <= th_ctrl_init;
+      _th_ctrl___0 <= 0;
+      _th_ctrl_start_time_1 <= 0;
+      axim_rdata_73 <= 0;
+      axim_rdata_74 <= 0;
+      _th_ctrl_end_time_2 <= 0;
+      _th_ctrl_ok_3 <= 0;
+      _th_ctrl_bat_4 <= 0;
+      _th_ctrl_i_5 <= 0;
+      rdata_75 <= 0;
+      _th_ctrl_orig_6 <= 0;
+      rdata_76 <= 0;
+      _th_ctrl_check_7 <= 0;
+    end else begin
+      case(th_ctrl)
+        th_ctrl_init: begin
+          th_ctrl <= th_ctrl_1;
+        end
+        th_ctrl_1: begin
+          _th_ctrl___0 <= 0;
+          th_ctrl <= th_ctrl_2;
+        end
+        th_ctrl_2: begin
+          if(_th_ctrl___0 < 100) begin
+            th_ctrl <= th_ctrl_3;
+          end else begin
+            th_ctrl <= th_ctrl_4;
+          end
+        end
+        th_ctrl_3: begin
+          _th_ctrl___0 <= _th_ctrl___0 + 1;
+          th_ctrl <= th_ctrl_2;
+        end
+        th_ctrl_4: begin
+          if((__saxi_outstanding_wcount == 0) && (_saxi_awready || !_saxi_awvalid)) begin
+            th_ctrl <= th_ctrl_5;
+          end 
+        end
+        th_ctrl_5: begin
+          if(_saxi_awvalid && _saxi_awready) begin
+            th_ctrl <= th_ctrl_6;
+          end 
+        end
+        th_ctrl_6: begin
+          if(__saxi_wready_sb_0 || !__saxi_wvalid_sb_0) begin
+            th_ctrl <= th_ctrl_7;
+          end 
+        end
+        th_ctrl_7: begin
+          if(__saxi_wvalid_sb_0 && __saxi_wready_sb_0) begin
+            th_ctrl <= th_ctrl_8;
+          end 
+        end
+        th_ctrl_8: begin
+          if(!__saxi_has_outstanding_write) begin
+            th_ctrl <= th_ctrl_9;
+          end 
+        end
+        th_ctrl_9: begin
+          _th_ctrl_start_time_1 <= time_counter;
+          th_ctrl <= th_ctrl_10;
+        end
+        th_ctrl_10: begin
+          if((__saxi_outstanding_wcount == 0) && (_saxi_awready || !_saxi_awvalid)) begin
+            th_ctrl <= th_ctrl_11;
+          end 
+        end
+        th_ctrl_11: begin
+          if(_saxi_awvalid && _saxi_awready) begin
+            th_ctrl <= th_ctrl_12;
+          end 
+        end
+        th_ctrl_12: begin
+          if(__saxi_wready_sb_0 || !__saxi_wvalid_sb_0) begin
+            th_ctrl <= th_ctrl_13;
+          end 
+        end
+        th_ctrl_13: begin
+          if(__saxi_wvalid_sb_0 && __saxi_wready_sb_0) begin
+            th_ctrl <= th_ctrl_14;
+          end 
+        end
+        th_ctrl_14: begin
+          if(!__saxi_has_outstanding_write) begin
+            th_ctrl <= th_ctrl_15;
+          end 
+        end
+        th_ctrl_15: begin
+          if(_saxi_arready || !_saxi_arvalid) begin
+            th_ctrl <= th_ctrl_16;
+          end 
+        end
+        th_ctrl_16: begin
+          if(_saxi_arvalid && _saxi_arready) begin
+            th_ctrl <= th_ctrl_17;
+          end 
+        end
+        th_ctrl_17: begin
+          if(__saxi_rvalid_sb_0) begin
+            axim_rdata_73 <= __saxi_rdata_sb_0;
+          end 
+          if(__saxi_rvalid_sb_0) begin
+            th_ctrl <= th_ctrl_18;
+          end 
+        end
+        th_ctrl_18: begin
+          if(axim_rdata_73 != 0) begin
+            th_ctrl <= th_ctrl_15;
+          end 
+          if(axim_rdata_73 == 0) begin
+            th_ctrl <= th_ctrl_19;
+          end 
+        end
+        th_ctrl_19: begin
+          $display("# start");
+          th_ctrl <= th_ctrl_20;
+        end
+        th_ctrl_20: begin
+          if(_saxi_arready || !_saxi_arvalid) begin
+            th_ctrl <= th_ctrl_21;
+          end 
+        end
+        th_ctrl_21: begin
+          if(_saxi_arvalid && _saxi_arready) begin
+            th_ctrl <= th_ctrl_22;
+          end 
+        end
+        th_ctrl_22: begin
+          if(__saxi_rvalid_sb_0) begin
+            axim_rdata_74 <= __saxi_rdata_sb_0;
+          end 
+          if(__saxi_rvalid_sb_0) begin
+            th_ctrl <= th_ctrl_23;
+          end 
+        end
+        th_ctrl_23: begin
+          if(axim_rdata_74 != 0) begin
+            th_ctrl <= th_ctrl_20;
+          end 
+          if(axim_rdata_74 == 0) begin
+            th_ctrl <= th_ctrl_24;
+          end 
+        end
+        th_ctrl_24: begin
+          _th_ctrl_end_time_2 <= time_counter;
+          th_ctrl <= th_ctrl_25;
+        end
+        th_ctrl_25: begin
+          $display("# end");
+          th_ctrl <= th_ctrl_26;
+        end
+        th_ctrl_26: begin
+          $display("# execution cycles: %d", (_th_ctrl_end_time_2 - _th_ctrl_start_time_1));
+          th_ctrl <= th_ctrl_27;
+        end
+        th_ctrl_27: begin
+          _th_ctrl_ok_3 <= 1;
+          th_ctrl <= th_ctrl_28;
+        end
+        th_ctrl_28: begin
+          _th_ctrl_bat_4 <= 0;
+          th_ctrl <= th_ctrl_29;
+        end
+        th_ctrl_29: begin
+          if(_th_ctrl_bat_4 < 1) begin
+            th_ctrl <= th_ctrl_30;
+          end else begin
+            th_ctrl <= th_ctrl_43;
+          end
+        end
+        th_ctrl_30: begin
+          _th_ctrl_i_5 <= 0;
+          th_ctrl <= th_ctrl_31;
+        end
+        th_ctrl_31: begin
+          if(_th_ctrl_i_5 < 2) begin
+            th_ctrl <= th_ctrl_32;
+          end else begin
+            th_ctrl <= th_ctrl_42;
+          end
+        end
+        th_ctrl_32: begin
+          if(th_ctrl == 32) begin
+            rdata_75 <= { _memory_mem[0 + ((_th_ctrl_bat_4 << 1) + _th_ctrl_i_5) * 16 / 8 + 1], _memory_mem[0 + ((_th_ctrl_bat_4 << 1) + _th_ctrl_i_5) * 16 / 8 + 0] } >> ((_th_ctrl_bat_4 << 1) + _th_ctrl_i_5) * 16 % 8;
+          end 
+          th_ctrl <= th_ctrl_33;
+        end
+        th_ctrl_33: begin
+          _th_ctrl_orig_6 <= rdata_75;
+          th_ctrl <= th_ctrl_34;
+        end
+        th_ctrl_34: begin
+          if(th_ctrl == 34) begin
+            rdata_76 <= { _memory_mem[5504 + ((_th_ctrl_bat_4 << 1) + _th_ctrl_i_5) * 16 / 8 + 1], _memory_mem[5504 + ((_th_ctrl_bat_4 << 1) + _th_ctrl_i_5) * 16 / 8 + 0] } >> ((_th_ctrl_bat_4 << 1) + _th_ctrl_i_5) * 16 % 8;
+          end 
+          th_ctrl <= th_ctrl_35;
+        end
+        th_ctrl_35: begin
+          _th_ctrl_check_7 <= rdata_76;
+          th_ctrl <= th_ctrl_36;
+        end
+        th_ctrl_36: begin
+          if(_th_ctrl_orig_6 !== _th_ctrl_check_7) begin
+            th_ctrl <= th_ctrl_37;
+          end else begin
+            th_ctrl <= th_ctrl_40;
+          end
+        end
+        th_ctrl_37: begin
+          $display("NG ( %d %d ) orig: %d check: %d", _th_ctrl_bat_4, _th_ctrl_i_5, _th_ctrl_orig_6, _th_ctrl_check_7);
+          th_ctrl <= th_ctrl_38;
+        end
+        th_ctrl_38: begin
+          _th_ctrl_ok_3 <= 0;
+          th_ctrl <= th_ctrl_39;
+        end
+        th_ctrl_39: begin
+          th_ctrl <= th_ctrl_41;
+        end
+        th_ctrl_40: begin
+          $display("OK ( %d %d ) orig: %d check: %d", _th_ctrl_bat_4, _th_ctrl_i_5, _th_ctrl_orig_6, _th_ctrl_check_7);
+          th_ctrl <= th_ctrl_41;
+        end
+        th_ctrl_41: begin
+          _th_ctrl_i_5 <= _th_ctrl_i_5 + 1;
+          th_ctrl <= th_ctrl_31;
+        end
+        th_ctrl_42: begin
+          _th_ctrl_bat_4 <= _th_ctrl_bat_4 + 1;
+          th_ctrl <= th_ctrl_29;
+        end
+        th_ctrl_43: begin
+          if(_th_ctrl_ok_3) begin
+            th_ctrl <= th_ctrl_44;
+          end else begin
+            th_ctrl <= th_ctrl_46;
+          end
+        end
+        th_ctrl_44: begin
+          $display("# verify: PASSED");
+          th_ctrl <= th_ctrl_45;
+        end
+        th_ctrl_45: begin
+          th_ctrl <= th_ctrl_47;
+        end
+        th_ctrl_46: begin
+          $display("# verify: FAILED");
+          th_ctrl <= th_ctrl_47;
+        end
+        th_ctrl_47: begin
+          $finish;
+          th_ctrl <= th_ctrl_48;
+        end
+      endcase
+    end
+  end
+
+
+endmodule
+
+
+
+module _memory_wreq_fifo
+(
+  input CLK,
+  input RST,
+  input _memory_wreq_fifo_enq,
+  input [41-1:0] _memory_wreq_fifo_wdata,
+  output _memory_wreq_fifo_full,
+  output _memory_wreq_fifo_almost_full,
+  input _memory_wreq_fifo_deq,
+  output [41-1:0] _memory_wreq_fifo_rdata,
+  output _memory_wreq_fifo_empty,
+  output _memory_wreq_fifo_almost_empty
+);
+
+  reg [41-1:0] mem [0:8-1];
+  reg [3-1:0] head;
+  reg [3-1:0] tail;
+  wire is_empty;
+  wire is_almost_empty;
+  wire is_full;
+  wire is_almost_full;
+  assign is_empty = head == tail;
+  assign is_almost_empty = head == (tail + 1 & 7);
+  assign is_full = (head + 1 & 7) == tail;
+  assign is_almost_full = (head + 2 & 7) == tail;
+  wire [41-1:0] rdata;
+  assign _memory_wreq_fifo_full = is_full;
+  assign _memory_wreq_fifo_almost_full = is_almost_full || is_full;
+  assign _memory_wreq_fifo_empty = is_empty;
+  assign _memory_wreq_fifo_almost_empty = is_almost_empty || is_empty;
+  assign rdata = mem[tail];
+  assign _memory_wreq_fifo_rdata = rdata;
+
+  always @(posedge CLK) begin
+    if(RST) begin
+      head <= 0;
+      tail <= 0;
+    end else begin
+      if(_memory_wreq_fifo_enq && !is_full) begin
+        mem[head] <= _memory_wreq_fifo_wdata;
+        head <= head + 1;
+      end 
+      if(_memory_wreq_fifo_deq && !is_empty) begin
+        tail <= tail + 1;
+      end 
+    end
+  end
+
+
+endmodule
+
+
+
+module _memory_rreq_fifo
+(
+  input CLK,
+  input RST,
+  input _memory_rreq_fifo_enq,
+  input [41-1:0] _memory_rreq_fifo_wdata,
+  output _memory_rreq_fifo_full,
+  output _memory_rreq_fifo_almost_full,
+  input _memory_rreq_fifo_deq,
+  output [41-1:0] _memory_rreq_fifo_rdata,
+  output _memory_rreq_fifo_empty,
+  output _memory_rreq_fifo_almost_empty
+);
+
+  reg [41-1:0] mem [0:8-1];
+  reg [3-1:0] head;
+  reg [3-1:0] tail;
+  wire is_empty;
+  wire is_almost_empty;
+  wire is_full;
+  wire is_almost_full;
+  assign is_empty = head == tail;
+  assign is_almost_empty = head == (tail + 1 & 7);
+  assign is_full = (head + 1 & 7) == tail;
+  assign is_almost_full = (head + 2 & 7) == tail;
+  wire [41-1:0] rdata;
+  assign _memory_rreq_fifo_full = is_full;
+  assign _memory_rreq_fifo_almost_full = is_almost_full || is_full;
+  assign _memory_rreq_fifo_empty = is_empty;
+  assign _memory_rreq_fifo_almost_empty = is_almost_empty || is_empty;
+  assign rdata = mem[tail];
+  assign _memory_rreq_fifo_rdata = rdata;
+
+  always @(posedge CLK) begin
+    if(RST) begin
+      head <= 0;
+      tail <= 0;
+    end else begin
+      if(_memory_rreq_fifo_enq && !is_full) begin
+        mem[head] <= _memory_rreq_fifo_wdata;
+        head <= head + 1;
+      end 
+      if(_memory_rreq_fifo_deq && !is_empty) begin
+        tail <= tail + 1;
+      end 
+    end
+  end
+
+
+endmodule
+
+
+
+module _memory_wdata_fifo
+(
+  input CLK,
+  input RST,
+  input _memory_wdata_fifo_enq,
+  input [37-1:0] _memory_wdata_fifo_wdata,
+  output _memory_wdata_fifo_full,
+  output _memory_wdata_fifo_almost_full,
+  input _memory_wdata_fifo_deq,
+  output [37-1:0] _memory_wdata_fifo_rdata,
+  output _memory_wdata_fifo_empty,
+  output _memory_wdata_fifo_almost_empty
+);
+
+  reg [37-1:0] mem [0:8-1];
+  reg [3-1:0] head;
+  reg [3-1:0] tail;
+  wire is_empty;
+  wire is_almost_empty;
+  wire is_full;
+  wire is_almost_full;
+  assign is_empty = head == tail;
+  assign is_almost_empty = head == (tail + 1 & 7);
+  assign is_full = (head + 1 & 7) == tail;
+  assign is_almost_full = (head + 2 & 7) == tail;
+  wire [37-1:0] rdata;
+  assign _memory_wdata_fifo_full = is_full;
+  assign _memory_wdata_fifo_almost_full = is_almost_full || is_full;
+  assign _memory_wdata_fifo_empty = is_empty;
+  assign _memory_wdata_fifo_almost_empty = is_almost_empty || is_empty;
+  assign rdata = mem[tail];
+  assign _memory_wdata_fifo_rdata = rdata;
+
+  always @(posedge CLK) begin
+    if(RST) begin
+      head <= 0;
+      tail <= 0;
+    end else begin
+      if(_memory_wdata_fifo_enq && !is_full) begin
+        mem[head] <= _memory_wdata_fifo_wdata;
+        head <= head + 1;
+      end 
+      if(_memory_wdata_fifo_deq && !is_empty) begin
+        tail <= tail + 1;
+      end 
+    end
+  end
+
+
+endmodule
+
+
+
+module taketwo
 (
   input CLK,
   input RESETN,
@@ -887,7 +2576,7 @@ module mlp
   assign cparam_matmul_11_cshamt_sum_value = (matmul_11_control_param_index == 0)? 32'h0 : 
                                              (matmul_11_control_param_index == 1)? 32'h0 : 32'h0;
   assign cparam_matmul_11_cshamt_out_value = (matmul_11_control_param_index == 0)? 32'h1e : 
-                                             (matmul_11_control_param_index == 1)? 32'h1c : 32'h1e;
+                                             (matmul_11_control_param_index == 1)? 32'h1e : 32'h1f;
   assign cparam_matmul_11_act_func_index = (matmul_11_control_param_index == 0)? 32'h0 : 
                                            (matmul_11_control_param_index == 1)? 32'h0 : 32'h1;
   assign cparam_matmul_11_out_num_col = (matmul_11_control_param_index == 0)? 32'h1 : 
