@@ -3,7 +3,7 @@
 module signal_quality_tb;
 
   logic clk = 0;
-  logic resetn = 0;
+  logic rst_i = 1;
 
   logic        epoch_end;
   logic        beat_event;
@@ -27,7 +27,7 @@ module signal_quality_tb;
 
   signal_quality dut (
     .clk_i(clk),
-    .rst_ni(resetn),
+    .rst_i(rst_i),
     .epoch_end_i(epoch_end),
     .beat_event_i(beat_event),
     .beat_quality_i(beat_quality),
@@ -119,9 +119,9 @@ module signal_quality_tb;
     cfg_motion_hi_th = 16'd500;
     cfg_max_motion_hi = 16'd3;
 
-    resetn = 0;
+    rst_i = 1;
     repeat (5) @(posedge clk);
-    resetn = 1;
+    rst_i = 0;
 
     // Epoch 1: good quality + low motion => valid
     send_beat(8'd200);

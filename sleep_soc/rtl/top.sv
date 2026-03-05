@@ -5,9 +5,29 @@ module top #() (
     ,output alarm_o
 
 );
+    // converting seconds to ms
+    localparam int unsigned CLK_HZ = 10_000_000;
+    localparam int unsigned MS_DIV = (CLK_HZ >= 1000) ? (CLK_HZ / 1000) : 1;
+    localparam int unsigned MS_DIV_W = (MS_DIV <= 1) ? 1 : $clog2(MS_DIV);
+
+    logic [MS_DIV_W-1:0] ms_div_q;
+    logic [31:0] time_ms_w;
+
+    always_ff @(posedge clk_i) begin
+        if (reset_i) begin
+            ms_div_q  <= '0;
+            time_ms_w <= 32'd0;
+        end else if (ms_div_q == MS_DIV-1) begin
+            ms_div_q  <= '0;
+            time_ms_w <= time_ms_w + 32'd1;
+        end else begin
+            ms_div_q <= ms_div_q + 1'b1;
+        end
+    end
+
     i2c_master #() i2c_mast (
         .clk(clk_i),
-        .resetn(reset_i),
+        .resetn(~reset_i),
         // Functional I2C bus :: Are these all inputs/outputs in top? isnt I2C 2 wires
         .i2c_req, //o
         .i2c_addr, //o 7b
@@ -34,54 +54,66 @@ module top #() (
         .ppg_err_o, //o
 
         // Config
-        .enable_i //i
+        .enable_i(2'b11) //i
     );
-    wire [15:0] seconds_w;
-    wire epoch_end_w;
+    logic [15:0] seconds_w;
+    logic epoch_end_w;
 
     globaltimer #() glob_time (
-        .clk_i,
+        .clk_i(clk_i),
         .rst_i(reset_i),
         .en_i(1'b1), // should go high and stay high as soon as the "night" starts, 1 for now
-        .time_in_night_seconds_o(seconds_w), //time in seconds       
-        .epoch_end_o(epoch_end_w),                      // high for 1 cycle after 1000 epochs (10 seconds at 100 Hz)
+        .time_in_night_seconds_o(seconds_w), //time in seconds   // TODO: should be 32 bits for unix time     
+        .epoch_end_o(epoch_end_w),                      // high for 1 cycle after 1000 cycles (10 seconds at 100 Hz)
         .epoch_index_o()                     // which epoch we are on (0 to 999, wraps around)
     ); 
 
-    wire [15:0] cos_w;
+    logic [15:0] cos_w;
 
     cos_lut_timer #() cos_feat (
-        .clk_i,
-        .rst_ni(reset_i),
+        .clk_i(clk_i),
+        .rst_i(reset_i),
 
         .cfg_enable_i(1'b1), //enable, 1 for now
         .seconds_in_night_i({16'h0000, seconds_w}),
         .seconds_valid_i(1'b1), //timer should always be valid, unless reset is high
         .cfg_period_seconds_i(32'h00015180), //total nighttime, thats number of seconds in a day, might need to change how to calc feature
-        .cfg_lut_bits_i(),   //TODO 4..6 supported
-        .cfg_scale_q15_i(16'h0001),  // 1.0 -> 32767, should be 3.13, no scale
+        .cfg_lut_bits_i(3'd6),   //  setting LUT size
+        .cfg_scale_q15_i(16'h7FFF),  // 1.0 -> 32767, should be 3.13, no scale
 
         .cos_time_feat_o(cos_w)
     );
 
-    wire [15:0] ax_w, ay_w, az_w; 
-    wire accel_valid_w, accel_error_w;
+    // TODO: replace these with real connections once i2c master is done
+    // Accel reader cmd outputs
+    logic        acc_cmd_ready_w;
+    logic        acc_rsp_valid_w;
+    logic [7:0]  acc_rsp_data_w;
+    logic        acc_rsp_done_w;
+    logic        acc_rsp_error_w;
+
+    assign acc_cmd_ready_w  = 1'b0;
+    assign acc_rsp_valid_w  = 1'b0;
+    assign acc_rsp_data_w   = 8'h00;
+    assign acc_rsp_done_w   = 1'b0;
+    assign acc_rsp_error_w  = 1'b0;
+
+    logic [15:0] ax_w, ay_w, az_w; 
+    logic accel_valid_w, accel_error_w;
 
     accel_reader #() accel_read (
         .clk(clk_i),
-        .resetn(reset_i),
+        .rst_i(reset_i),
 
-        .cfg_enable_i(1'b1), //this is an overall enable?
-        .cfg_init_en_i(1'b1), //i2c init sequence enable, should this be tied to 1?
-        .cfg_poll_period_ticks_i(32'h000186A0), //TODO polling period for accel reader, dependent on clock? so if 10MHz clk with 100Hz samples from sensor, 100_000 polling period? 
-        .cfg_ctrl1_data_i(), //TODO 8bitsm what should these be, ananya question?
-        .cfg_range_data_i(), //^^
-
-        .t_now_i({16'h0000,seconds_w}), //timestamp from global timer
+        .cfg_enable_i(1'b1), // overall enable
+        .cfg_init_en_i(1'b1), // enables config writes to accel regs at startup
+        .cfg_poll_period_ticks_i(32'd50000), // poll period in clk ticks (5MHz/100Hz=50,000)
+        .cfg_ctrl1_data_i(8'h57), // 100 Hz ODR, XYZ enable (LIS2DW/LIS3 class default style)
+        .cfg_range_data_i(8'h00), // +/-2g full scale
 
         // I2C command interface
         .i2c_cmd_valid_o(), //i have a command to read ready
-        .i2c_cmd_ready_i(), //input saying i2c master is ready to receive command
+        .i2c_cmd_ready_i(acc_cmd_ready_w), //input saying i2c master is ready to receive command
         .i2c_cmd_addr_o(), //output address for i2c 7bit
         .i2c_cmd_reg_o(), //register access, prob ignore
         .i2c_cmd_len_o(), //number of bytes to read/write
@@ -89,60 +121,73 @@ module top #() (
         .i2c_cmd_wdata_o(), //data to be written on write commands
 
         // I2C response interface
-        .i2c_rsp_valid_i(), //valid
-        .i2c_rsp_data_i(), //8bit data written back
-        .i2c_rsp_done_i(), //if resp is done
-        .i2c_rsp_error_i(), //was there an error
+        .i2c_rsp_valid_i(acc_rsp_valid_w), //valid
+        .i2c_rsp_data_i(acc_rsp_data_w), //8bit data written back
+        .i2c_rsp_done_i(acc_rsp_done_w), //if resp is done
+        .i2c_rsp_error_i(acc_rsp_error_w), //was there an error
 
         // Output samples
         .ax_o(ax_w), //16b 
         .ay_o(ay_w), //16b
         .az_o(az_w), //16b 
         .accel_valid_o(accel_valid_w), //data valid
-        .accel_sample_time_o(), //time output on complete data
 
-        .init_done_o(), //TODO if init was done successfully, prob means we can pull cfg_init_en_i low when this is high
-
-        //TODO: figure out what to do with these 3 signals, sample ok's if no error?
+        // DEBUG SIGNALS
+        .init_done_o(), // debug signal to check if init successful
         .i2c_error_o(accel_error_w), //errors on: NACK seen, Unexpected length, Timeout
         .timeout_o(), //if we hit timeout resp
         .nack_seen_o(), //if theres a nack 
     );
 
-    wire [47:0] motion_mag_w; 
-    wire motion_epoch_w;
+    logic [47:0] motion_mag_w; 
+    logic motion_epoch_w;
 
-    motion_preprocess #() motion_prepros ( 
+    motion_preprocess #(
+        .AX_W(16)
+    ) motion_prepros ( 
         .clk(clk_i),
-        .resetn(reset_i),
+        .rst_i(reset_i),
         // Sample capture
         .sample_valid_i(accel_valid_w), //sample in valid
-        .sample_ok_i(accel_error_w), //sample is good data
+        .sample_ok_i(!accel_error_w), //sample is good data
         .ax_i(ax_w), //14b 
         .ay_i(ay_w), //14b 
         .az_i(az_w), //14b
-        // Config
-        .cfg_energy_sq_i(1'b0),     // 0: mag, 1: mag^2
         // Epoch control (external)
         .epoch_end_i(epoch_end_w), //input saying when epoch is done
         // Per epoch outputs (latched on epoch end)
         .epoch_done_o(motion_epoch_w), //passing on epoch end_i, with latching?
-        .motion_energy_epoch_o(motion_mag) //48b total movement, prob just pass on top 16 bits to feature engine
+        .motion_energy_epoch_o(motion_mag_w) //48b total movement
     );
 
-    wire [31:0] ppg_timestamp_w;
-    wire [15:0] ppg_sample_w;
-    wire ppg_valido_w, fifo_over_w, fifo_empty_w, i2c_err_w;
+    logic [31:0] ppg_timestamp_w;
+    logic [15:0] ppg_sample_w;
+    logic ppg_valido_w, fifo_over_w, fifo_empty_w, ppg_i2c_err_w;
+
+    // TODO: replace these with real connections once i2c master is done
+    // PPG FIFO reader rsp inputs
+    logic        ppg_cmd_ready_w;
+    logic        ppg_rsp_valid_w;
+    logic [7:0]  ppg_rsp_data_w;
+    logic        ppg_rsp_last_w;
+    logic        ppg_rsp_err_w;
+    logic        ppg_rsp_ready_w;
+
+    assign ppg_cmd_ready_w  = 1'b0;
+    assign ppg_rsp_valid_w  = 1'b0;
+    assign ppg_rsp_data_w   = 8'h00;
+    assign ppg_rsp_last_w   = 1'b0;
+    assign ppg_rsp_err_w    = 1'b0;
 
     ppg_fifo_reader #() ppg_read (
-        .clk(clk_i),
-        .resetn(reset_i),
+        .clk_i(clk_i),
+        .rst_i(reset_i),
 
-        .t_now({16'h0000, seconds_w}), //global timestamp 32b
+        .t_now(time_ms_w), //global timestamp in ms
 
         // i2c command interface
         .i2c_cmd_valid(), //i have a command to read ready
-        .i2c_cmd_ready(), //input saying i2c master is ready to receive command
+        .i2c_cmd_ready(ppg_cmd_ready_w), //input saying i2c master is ready to receive command
         .i2c_cmd_addr(), //output address for i2c 7bit
         .i2c_cmd_reg(), //register access, prob ignore
         .i2c_cmd_len(), //number of bytes to read/write
@@ -150,59 +195,80 @@ module top #() (
         .i2c_cmd_wdata(), //data to be written on write commands
 
         // i2c response interface
-        .i2c_rsp_valid(), //i resp valid signal
-        .i2c_rsp_data(), //i 8b resp data byte
-        .i2c_rsp_last(), //i last bit signal
-        .i2c_rsp_err(), //resp error signal
-        .i2c_rsp_ready(), //resp ready
+        .i2c_rsp_valid(ppg_rsp_valid_w), //i resp valid signal
+        .i2c_rsp_data(ppg_rsp_data_w), //i 8b resp data byte
+        .i2c_rsp_last(ppg_rsp_last_w), //i last bit signal
+        .i2c_rsp_err(ppg_rsp_err_w), //resp error signal
+        .i2c_rsp_ready(ppg_rsp_ready_w), //resp ready
 
         // output samples
         .ppg_sample(ppg_sample_w), //o 16b data output
         .ppg_sample_valid(ppg_valido_w), //o is the sample valid currently
         .ppg_sample_time(ppg_timestamp_w), //o 32b timestamp from the data
 
+        // go into signal quality module
         .fifo_overflow_flag(fifo_over_w), //fifo full
         .fifo_empty_flag(fifo_empty_w), //fifo empty
-        .i2c_error_flag(i2c_err_w), //fifo error
+        .i2c_error_flag(ppg_i2c_err_w), //fifo error
     );
 
-    wire [31:0] rr_int_w;
-    wire [15:0] delta_hr_w;
-    wire [7:0] beat_qual_w;
-    wire rr_accepted_w, rr_valid_w, double_beat_w, missed_beat_w, ppg_invalid_w, beat_pulse_w;
+    // Beat detect defaults
+    localparam logic [11:0] CFG_LP_BETA_Q10      = 12'd128;  // 0.125
+    localparam logic [11:0] CFG_BASE_ALPHA_Q10   = 12'd16;   // 0.015625
+    localparam logic [23:0] CFG_ENV_DECAY         = 24'd8;
+    localparam logic [11:0] CFG_THR_K_Q10         = 12'd512;  // 0.5
+    localparam logic [23:0] CFG_THR_MIN           = 24'd32;
+    localparam logic [31:0] CFG_REFRACT_MS        = 32'd250;
+    localparam logic [31:0] CFG_RR_MIN_MS         = 32'd300;
+    localparam logic [31:0] CFG_RR_MAX_MS         = 32'd2000;
+    localparam logic [7:0]  CFG_Q_AMP_W           = 8'd4;
+    localparam logic [7:0]  CFG_Q_SLOPE_W         = 8'd2;
+    localparam logic [7:0]  CFG_Q_REFRAC_PENALTY  = 8'd24;
+    localparam logic [7:0]  CFG_Q_MIN_ACCEPT      = 8'd10;
+
+    // Signal quality defaults
+    localparam logic [7:0]  CFG_BEAT_Q_MIN        = 8'd16;
+    localparam logic [7:0]  CFG_MIN_VALID_FRAC    = 8'd96;    // about 38%
+    localparam logic [7:0]  CFG_MAX_DOUBLE        = 8'd4;
+    localparam logic [7:0]  CFG_MAX_MISSED        = 8'd3;
+    localparam logic [15:0] CFG_MOTION_HI_TH      = 16'd2000;
+    localparam logic [15:0] CFG_MAX_MOTION_HI     = 16'd3;
+
+    logic [31:0] rr_int_w;
+    logic signed [16:0] delta_hr_w;
+    logic [7:0] beat_qual_w;
+    logic rr_accepted_w, rr_valid_w, double_beat_w, missed_beat_w, ppg_invalid_w, beat_pulse_w;
 
     ppg_beat_detect_rr_calc #() beat_detect ( // in from ppg reader, out to RMSSD and feature engine
         .clk_i,
-        .rst_ni(reset_i),
+        .rst_i(reset_i),
 
         .ppg_sample_i(ppg_sample_w), //16b ppg sample input
         .ppg_valid_i(ppg_valido_w), //ppg valid
         .ppg_sample_time_i(ppg_timestamp_w), //32b ppg reader timestamp inp
-        .timebase_i({16'h0000, seconds_w}), //32b global timer input prob ignore with config
 
         .cfg_enable_i(1'b1), //module enable 
         .cfg_bypass_i(1'b0), //detection log bypass
-        .cfg_time_src_i(1'b0),       // 0: timebase_i, 1: ppg_sample_time_i
         .cfg_signed_i(1'b0),         // 0: unsigned sample, 1: signed sample, i think they are all unsigned?
 
-        .cfg_lp_beta_i(), //beta coeff for math coming from MMIO 12bit
-        .cfg_base_alpha_i(), //same but for alpha 12bit
-        .cfg_env_decay_i(), //24b how fast envelope decays? MMIO
-        .cfg_abs_en_i(1'b1), //use absolute val, i think this should be 1
+        .cfg_lp_beta_i(CFG_LP_BETA_Q10), // low-pass filter coefficient for smoothing
+        .cfg_base_alpha_i(CFG_BASE_ALPHA_Q10), // baseline tracking coefficient for high pass removal
+        .cfg_env_decay_i(CFG_ENV_DECAY), // envelope decay (for adaptive thresholding)
+        .cfg_abs_en_i(1'b1), //use absolute val
 
-        .cfg_thr_k_i(), //scaling factor for thresholds, 12bit also in MMIO
-        .cfg_thr_min_i(), //min threshold floor? 24b
+        .cfg_thr_k_i(CFG_THR_K_Q10), //scaling factor for thresholds, Q10
+        .cfg_thr_min_i(CFG_THR_MIN), //min threshold floor (prevents too low threshold)
 
-        .cfg_refrac_ticks_i(), //minimum threshold input between heartbeats i.e. time beat checks
-        .cfg_rr_min_ticks_i(), //reject values lower than this amount, likely ppg noise
-        .cfg_rr_max_ticks_i(), //reject intervals longer than this amount, meaning we likely missed a beat, ie bad signal
-        .cfg_peak_mode_i(),      // 0: local-max, 1: rising-edge
+        .cfg_refrac_ticks_i(CFG_REFRACT_MS), // refractory period in ms
+        .cfg_rr_min_ticks_i(CFG_RR_MIN_MS), // reject RR below this (ms)
+        .cfg_rr_max_ticks_i(CFG_RR_MAX_MS), // reject RR above this (ms)
+        .cfg_peak_mode_i(1'b0),      // 0: local-max, 1: rising-edge
 
         //values for scoring beat amounts
-        .cfg_q_amp_w_i(), //8b amplitude weight
-        .cfg_q_slope_w_i(), //8b slope weight
-        .cfg_q_refrac_penalty_i(), //penalty if too close to refractory
-        .cfg_q_min_accept_i(), //min score to allow a beat reading
+        .cfg_q_amp_w_i(CFG_Q_AMP_W), //8b amplitude weight
+        .cfg_q_slope_w_i(CFG_Q_SLOPE_W), //8b slope weight
+        .cfg_q_refrac_penalty_i(CFG_Q_REFRAC_PENALTY), //penalty if too close to refractory
+        .cfg_q_min_accept_i(CFG_Q_MIN_ACCEPT), //min score to allow a beat reading
 
         .beat_pulse_o(beat_pulse_w), //heartbeat signal
         .rr_valid_o(rr_valid_w), //pulse when RR interval is done
@@ -216,48 +282,48 @@ module top #() (
         .ppg_invalid_o(ppg_invalid_w) //invalid, interval too long
     );
 
-    wire [31:0] rmssd_w;
-    wire rmssd_valid_w;
+    logic [31:0] rmssd_w;
+    logic rmssd_valid_w;
 
     rmssd_engine #() rmssd_feat (
         .clk_i,
-        .rst_ni(reset_i),
+        .rst_i(reset_i),
 
         .rr_interval_i(rr_int_w), //32b rr interval from beat detect
         .rr_valid_i(rr_valid_w), //rr valid
         .rr_accepted_i(rr_accepted_w), //rr accepted  
-        .epoch_end_i(), //epoch end from global timer
+        .epoch_end_i(epoch_end_w), //epoch end from global timer
 
         .rmssd_epoch_o(rmssd_w), //32b rmssd per epoch
         .rmssd_valid_o(rmssd_valid_w), //valid_o signal
         .rr_diff_count_o() //16b how many rr differences contributed to the rmssd
     );
 
-    wire valid_feats_w;
+    logic valid_feats_w;
 
     signal_quality #() signal_qual (
         .clk_i(clk_i),
-        .rst_ni(reset_i),
+        .rst_i(reset_i),
 
         .epoch_end_i(epoch_end_w), //epoch end from global timer
 
-        .beat_event_i(beat_pulse_w), //beat event, beat pulse i think? should this be beat pulse nithin
+        .beat_event_i(beat_pulse_w), // beat event 
         .beat_quality_i(beat_qual_w), //8b beat quality from beat detect
         .double_beat_i(double_beat_w), //double beat detect
         .missed_beat_i(missed_beat_w), //missed beat
 
         .fifo_overflow_i(fifo_over_w), //fifo overflow from ppg fifo reader
-        .fifo_i2c_error_i(i2c_err_w), //fifo error from ppg fifo reader
+        .fifo_i2c_error_i(ppg_i2c_err_w), //fifo error from ppg fifo reader
 
-        .motion_valid_i(motion_epoch_w), //motion ouput valid, connected this with epoch done??
+        .motion_valid_i(motion_epoch_w), // motion epoch summary is valid
         .motion_intensity_i(motion_mag_w[47:32]), //16b motion input, maybe just take top 16b
 
-        .cfg_beat_q_min_i(), //8b beat quality minimum
-        .cfg_min_valid_fraction_i(), //8b minimum fraction of valid beats compared to total beats before dropped
-        .cfg_max_double_i(), //8b max number of double heartbeat detections allowed
-        .cfg_max_missed_i(), //8b max number of missed heartbeats detected
-        .cfg_motion_hi_th_i(), //16b threshold for movement that's too high
-        .cfg_max_motion_hi_i(), //16b number of maxed out motion detections before data dropped
+        .cfg_beat_q_min_i(CFG_BEAT_Q_MIN), //8b beat quality minimum
+        .cfg_min_valid_fraction_i(CFG_MIN_VALID_FRAC), //8b minimum fraction of valid beats
+        .cfg_max_double_i(CFG_MAX_DOUBLE), //8b max number of double heartbeat detections allowed
+        .cfg_max_missed_i(CFG_MAX_MISSED), //8b max number of missed heartbeats detected
+        .cfg_motion_hi_th_i(CFG_MOTION_HI_TH), //16b threshold for movement that's too high
+        .cfg_max_motion_hi_i(CFG_MAX_MOTION_HI), //16b max high-motion epochs
 
         .invalid_reason_o(), //8b 
         /*
@@ -273,14 +339,14 @@ module top #() (
         .ml_update_gate_o(valid_feats_w) //tells feat engine if data is good to go
     );
 
-    wire [15:0] motion_ml_w, cos_ml_w, delta_ml_w, rmssd_ml_w; 
-    wire feat_eng_valid_w;
+    logic [15:0] motion_ml_w, cos_ml_w, delta_ml_w, rmssd_ml_w; 
+    logic feat_eng_valid_w;
 
     feature_engine feat_en(
-        .clk_i,
-        .rst_ni(reset_i),
+        .clk_i(clk_i),
+        .rst_i(reset_i),
         .enable_i(1'b1), //module enable
-        .seconds_valid_i(1'b1), //cos LUT inp valid is it always valid too?
+        .seconds_valid_i(1'b1), //cos LUT inp valid (always valid)
         .cos_time_feat_i(cos_w), //16b cos time feat from LUT
         // motion
         .motion_valid_i(motion_epoch_w), //motion preprocessing valid
@@ -288,11 +354,11 @@ module top #() (
 
         // delta hr
         .delta_hr_valid_i(rr_valid_w), //delta hr valid from beat detect
-        .delta_hr_i(delta_hr_w), //delta hr feature
+        .delta_hr_i(delta_hr_w[15:0]), //delta hr feature
 
         // rmssd
         .rmssd_valid_i(rmssd_valid_w), //rmssd valid signal
-        .rmssd_i(rmssd_w[31:16]), //16b rmssd feature
+        .rmssd_i(rmssd_w[15:0]), //16b rmssd feature
 
         // valid
         .feat_valid_o(feat_eng_valid_w), //feature valid_o
@@ -307,7 +373,7 @@ module top #() (
 
     axi_interface feats_to_ml(
         .CLK(clk_i),
-        .RESETN(reset_i),
+        .RESETN(~reset_i),
 
         // control
         .start(feat_eng_valid_w), //this should come from the CPU? or maybe just the valid signal

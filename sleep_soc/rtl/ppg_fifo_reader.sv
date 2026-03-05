@@ -15,35 +15,35 @@ module ppg_fifo_reader #(
     parameter integer POLL_PERIOD = 1_000_000,
     parameter integer TIMESTAMP_PER_SAMPLE = 1
 )(
-    input  wire                  clk,
-    input  wire                  resetn,
+    input  logic                  clk_i,
+    input  logic                  rst_i,
 
-    input  wire [31:0]           t_now,
+    input  logic [31:0]           t_now,
 
     // i2c command interface
-    output reg                   i2c_cmd_valid,
-    input  wire                  i2c_cmd_ready,
-    output reg  [6:0]            i2c_cmd_addr,
-    output reg  [7:0]            i2c_cmd_reg,
-    output reg  [7:0]            i2c_cmd_len,
-    output reg                   i2c_cmd_write,
-    output reg  [7:0]            i2c_cmd_wdata,
+    output logic                   i2c_cmd_valid,
+    input  logic                  i2c_cmd_ready,
+    output logic  [6:0]            i2c_cmd_addr,
+    output logic  [7:0]            i2c_cmd_reg,
+    output logic  [7:0]            i2c_cmd_len,
+    output logic                   i2c_cmd_write,
+    output logic  [7:0]            i2c_cmd_wdata,
 
     // i2c response interface
-    input  wire                  i2c_rsp_valid,
-    input  wire [7:0]            i2c_rsp_data,
-    input  wire                  i2c_rsp_last,
-    input  wire                  i2c_rsp_err,
-    output reg                   i2c_rsp_ready,
+    input  logic                  i2c_rsp_valid,
+    input  logic [7:0]            i2c_rsp_data,
+    input  logic                  i2c_rsp_last,
+    input  logic                  i2c_rsp_err,
+    output logic                   i2c_rsp_ready,
 
     // output samples
-    output reg  [SAMPLE_W-1:0]   ppg_sample,
-    output reg                   ppg_sample_valid,
-    output reg  [31:0]           ppg_sample_time,
+    output logic  [SAMPLE_W-1:0]   ppg_sample,
+    output logic                   ppg_sample_valid,
+    output logic  [31:0]           ppg_sample_time,
 
-    output reg                   fifo_overflow_flag,
-    output reg                   fifo_empty_flag,
-    output reg                   i2c_error_flag
+    output logic                   fifo_overflow_flag,
+    output logic                   fifo_empty_flag,
+    output logic                   i2c_error_flag
 );
 
     localparam integer STATUS_W = 16;
@@ -69,41 +69,54 @@ module ppg_fifo_reader #(
 
     state_t state_r;
 
-    reg [31:0] poll_cnt_r;
-    reg [STATUS_W-1:0] status_shift_r;
-    reg [$clog2(STATUS_BYTES+1)-1:0] status_byte_idx_r;
-    reg [THRESH_W-1:0] thresh_shift_r;
-    reg [$clog2(3)-1:0] thresh_byte_idx_r;
+    logic [31:0] poll_cnt_r;
+    logic [STATUS_W-1:0] status_shift_r;
+    logic [$clog2(STATUS_BYTES+1)-1:0] status_byte_idx_r;
+    logic [THRESH_W-1:0] thresh_shift_r;
+    logic [$clog2(3)-1:0] thresh_byte_idx_r;
 
-    reg [SAMPLE_W-1:0] sample_shift_r;
-    reg [$clog2(SAMPLE_BYTES+1)-1:0] sample_byte_idx_r;
+    logic [SAMPLE_W-1:0] sample_shift_r;
+    logic [$clog2(SAMPLE_BYTES+1)-1:0] sample_byte_idx_r;
 
-    reg [15:0] bytes_left_r;
-    reg [15:0] read_bytes_r;
-    reg [15:0] samples_left_r;
-    reg [31:0] burst_time_r;
+    logic [15:0] bytes_left_r;
+    logic [15:0] read_bytes_r;
+    logic [15:0] samples_left_r;
+    logic [31:0] burst_time_r;
 
-    wire poll_hit = (poll_cnt_r == (POLL_PERIOD - 1));
+    logic poll_hit;
 
-    wire overflow_w = status_shift_r[7];
-    wire [7:0] fifo_bytes_avail_w = status_shift_r[15:8];
-    wire [5:0] fifo_thresh_words_w = thresh_shift_r[13:8];
-    wire [5:0] fifo_thresh_words_eff_w = (fifo_thresh_words_w != 6'd0) ?
-                                         fifo_thresh_words_w :
-                                         ((WATERMARK > 63) ? 6'd63 : WATERMARK[5:0]);
-    wire [15:0] fifo_thresh_bytes_w = {9'd0, fifo_thresh_words_eff_w, 1'b0};
-    wire fifo_empty_w = (fifo_bytes_avail_w == 8'd0);
+    logic overflow_w;
+    logic [7:0] fifo_bytes_avail_w;
+    logic [5:0] fifo_thresh_words_w;
+    logic [5:0] fifo_thresh_words_eff_w;
+    logic [15:0] fifo_thresh_bytes_w;
+    logic fifo_empty_w;
 
-    wire [15:0] fifo_bytes_avail_ext_w = {8'd0, fifo_bytes_avail_w};
-    wire [15:0] read_bytes_pre_w =
+    logic [15:0] fifo_bytes_avail_ext_w;
+    logic [15:0] read_bytes_pre_w;
+    logic [15:0] read_bytes_pkt_w;
+    logic [15:0] read_samples_w;
+    logic should_read_w;
+
+    assign poll_hit = (poll_cnt_r == (POLL_PERIOD - 1));
+    assign overflow_w = status_shift_r[7];
+    assign fifo_bytes_avail_w = status_shift_r[15:8];
+    assign fifo_thresh_words_w = thresh_shift_r[13:8];
+    assign fifo_thresh_words_eff_w = (fifo_thresh_words_w != 6'd0) ?
+                                     fifo_thresh_words_w :
+                                     ((WATERMARK > 63) ? 6'd63 : WATERMARK[5:0]);
+    assign fifo_thresh_bytes_w = {9'd0, fifo_thresh_words_eff_w, 1'b0};
+    assign fifo_empty_w = (fifo_bytes_avail_w == 8'd0);
+    assign fifo_bytes_avail_ext_w = {8'd0, fifo_bytes_avail_w};
+    assign read_bytes_pre_w =
         (fifo_bytes_avail_ext_w > MAX_BURST_BYTES[15:0]) ? MAX_BURST_BYTES[15:0] : fifo_bytes_avail_ext_w;
-    wire [15:0] read_bytes_pkt_w = (read_bytes_pre_w / PACKET_BYTES_EFF) * PACKET_BYTES_EFF;
-    wire [15:0] read_samples_w = read_bytes_pkt_w / SAMPLE_BYTES;
-    wire should_read_w = (fifo_bytes_avail_ext_w >= fifo_thresh_bytes_w) &&
-                         (read_bytes_pkt_w >= PACKET_BYTES_EFF);
+    assign read_bytes_pkt_w = (read_bytes_pre_w / PACKET_BYTES_EFF) * PACKET_BYTES_EFF;
+    assign read_samples_w = read_bytes_pkt_w / SAMPLE_BYTES;
+    assign should_read_w = (fifo_bytes_avail_ext_w >= fifo_thresh_bytes_w) &&
+                           (read_bytes_pkt_w >= PACKET_BYTES_EFF);
 
-    always @(posedge clk) begin
-        if (!resetn) begin
+    always @(posedge clk_i) begin
+        if (rst_i) begin
             state_r <= ST_POLL;
             poll_cnt_r <= 32'd0;
 
@@ -172,7 +185,7 @@ module ppg_fifo_reader #(
                             state_r <= ST_POLL;
                         end else begin
                             begin
-                                reg [STATUS_W-1:0] status_next;
+                                logic [STATUS_W-1:0] status_next;
                                 status_next = status_shift_r | ({{(STATUS_W-8){1'b0}}, i2c_rsp_data} << (status_byte_idx_r * 8));
                                 status_shift_r <= status_next;
                                 status_byte_idx_r <= status_byte_idx_r + 1'b1;
@@ -206,7 +219,7 @@ module ppg_fifo_reader #(
                             state_r <= ST_POLL;
                         end else begin
                             begin
-                                reg [THRESH_W-1:0] thresh_next;
+                                logic [THRESH_W-1:0] thresh_next;
                                 thresh_next = thresh_shift_r | ({{(THRESH_W-8){1'b0}}, i2c_rsp_data} << (thresh_byte_idx_r * 8));
                                 thresh_shift_r <= thresh_next;
                                 thresh_byte_idx_r <= thresh_byte_idx_r + 1'b1;
@@ -319,3 +332,5 @@ module ppg_fifo_reader #(
     end
 
 endmodule
+
+

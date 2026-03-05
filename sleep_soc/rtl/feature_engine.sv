@@ -1,6 +1,6 @@
 module feature_engine (
     input  wire                     clk_i,
-    input  wire                     rst_ni,
+    input  wire                     rst_i,
 
     // enable on epoch end at top level
     input  wire                     enable_i,
@@ -32,7 +32,7 @@ module feature_engine (
     input  wire                     ml_update_gate_i
 );
     always @(posedge clk_i) begin
-        if(!rst_ni) begin
+        if(rst_i) begin
             feat_valid_o <= 1'b0;
             time_feat_o <= 16'sd0;
             motion_feat_o <= 16'sd0;

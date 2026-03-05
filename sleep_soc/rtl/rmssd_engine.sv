@@ -6,29 +6,29 @@ module rmssd_engine #(
     parameter integer CNT_W = 16,
     parameter integer MIN_RR_COUNT = 1
 ) (
-    input  wire                         clk_i,
-    input  wire                         rst_ni,
+    input  logic                         clk_i,
+    input  logic                         rst_i,
 
-    input  wire [RR_W-1:0]              rr_interval_i,
-    input  wire                         rr_valid_i,
-    input  wire                         rr_accepted_i,
-    input  wire                         epoch_end_i,
+    input  logic [RR_W-1:0]              rr_interval_i,
+    input  logic                         rr_valid_i,
+    input  logic                         rr_accepted_i,
+    input  logic                         epoch_end_i,
 
-    output reg  [RR_W-1:0]              rmssd_epoch_o,
-    output reg                          rmssd_valid_o,
-    output reg  [CNT_W-1:0]             rr_diff_count_o
+    output logic  [RR_W-1:0]              rmssd_epoch_o,
+    output logic                          rmssd_valid_o,
+    output logic  [CNT_W-1:0]             rr_diff_count_o
 );
 
-    reg [RR_W-1:0] prev_rr_r;
-    reg            have_prev_rr_r;
-    reg [ACC_W-1:0] sum_sq_r;
-    reg [CNT_W-1:0] diff_cnt_r;
+    logic [RR_W-1:0] prev_rr_r;
+    logic            have_prev_rr_r;
+    logic [ACC_W-1:0] sum_sq_r;
+    logic [CNT_W-1:0] diff_cnt_r;
 
     function automatic [RR_W-1:0] isqrt_u64;
         input [63:0] x;
-        reg [63:0] op;
-        reg [63:0] res;
-        reg [63:0] one;
+        logic [63:0] op;
+        logic [63:0] res;
+        logic [63:0] one;
         integer i;
         begin
             op  = x;
@@ -55,12 +55,12 @@ module rmssd_engine #(
         end
     endfunction
 
-    always @(posedge clk_i or negedge rst_ni) begin
-        reg signed [RR_W:0] diff_v;
-        reg [ACC_W-1:0] diff_sq_v;
-        reg [ACC_W-1:0] mean_sq_v;
-        reg [RR_W-1:0] rmssd_v;
-        if (!rst_ni) begin
+    always @(posedge clk_i) begin
+        logic signed [RR_W:0] diff_v;
+        logic [ACC_W-1:0] diff_sq_v;
+        logic [ACC_W-1:0] mean_sq_v;
+        logic [RR_W-1:0] rmssd_v;
+        if (rst_i) begin
             prev_rr_r <= {RR_W{1'b0}};
             have_prev_rr_r <= 1'b0;
             sum_sq_r <= {ACC_W{1'b0}};
@@ -102,3 +102,5 @@ module rmssd_engine #(
     end
 
 endmodule
+
+

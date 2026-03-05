@@ -9,16 +9,15 @@ module ppg_beat_detect_rr_calc_tb;
   localparam int COEFF_ONE = (1 << COEFF_FRAC);
 
   logic clk = 0;
-  logic rst_n = 0;
+  logic rst_i = 1;
 
   logic [SAMPLE_W-1:0] ppg_sample;
   logic                ppg_valid;
   logic [T_W-1:0]      ppg_sample_time;
-  logic [T_W-1:0]      timebase;
+  logic [T_W-1:0]      sim_time;
 
   logic                cfg_enable;
   logic                cfg_bypass;
-  logic                cfg_time_src;
   logic                cfg_signed;
   logic [COEFF_W-1:0]  cfg_lp_beta;
   logic [COEFF_W-1:0]  cfg_base_alpha;
@@ -52,14 +51,12 @@ module ppg_beat_detect_rr_calc_tb;
     .COEFF_FRAC(COEFF_FRAC)
   ) dut (
     .clk_i(clk),
-    .rst_ni(rst_n),
+    .rst_i(rst_i),
     .ppg_sample_i(ppg_sample),
     .ppg_valid_i(ppg_valid),
     .ppg_sample_time_i(ppg_sample_time),
-    .timebase_i(timebase),
     .cfg_enable_i(cfg_enable),
     .cfg_bypass_i(cfg_bypass),
-    .cfg_time_src_i(cfg_time_src),
     .cfg_signed_i(cfg_signed),
     .cfg_lp_beta_i(cfg_lp_beta),
     .cfg_base_alpha_i(cfg_base_alpha),
@@ -89,15 +86,15 @@ module ppg_beat_detect_rr_calc_tb;
   always #10 clk = ~clk;
 
   always @(posedge clk) begin
-    if (!rst_n) timebase <= 0;
-    else timebase <= timebase + 1;
+    if (rst_i) sim_time <= 0;
+    else sim_time <= sim_time + 1;
   end
 
   task automatic step_sample(input int s);
     begin
       @(negedge clk);
       ppg_sample <= s[SAMPLE_W-1:0];
-      ppg_sample_time <= timebase;
+      ppg_sample_time <= sim_time;
       ppg_valid <= 1'b1;
       @(posedge clk);
       @(negedge clk);
@@ -125,9 +122,9 @@ module ppg_beat_detect_rr_calc_tb;
 
   task automatic reset_dut();
     begin
-      rst_n <= 1'b0;
+      rst_i <= 1'b1;
       repeat (5) @(posedge clk);
-      rst_n <= 1'b1;
+      rst_i <= 1'b0;
       repeat (2) @(posedge clk);
     end
   endtask
@@ -140,7 +137,7 @@ module ppg_beat_detect_rr_calc_tb;
   reg signed [16:0] last_delta_hr;
 
   always @(posedge clk) begin
-    if (!rst_n) begin
+    if (rst_i) begin
       beat_count <= 0;
       rr_count <= 0;
       dbl_count <= 0;
@@ -163,7 +160,6 @@ module ppg_beat_detect_rr_calc_tb;
     begin
       cfg_enable            = 1'b1;
       cfg_bypass            = 1'b0;
-      cfg_time_src          = 1'b0;
       cfg_signed            = 1'b0;
       cfg_lp_beta           = COEFF_ONE;
       cfg_base_alpha        = 0;
@@ -186,7 +182,7 @@ module ppg_beat_detect_rr_calc_tb;
     ppg_sample = 0;
     ppg_valid = 0;
     ppg_sample_time = 0;
-    timebase = 0;
+    sim_time = 0;
     apply_default_cfg();
 
     // 1) First beat after reset: beat pulse, no RR.

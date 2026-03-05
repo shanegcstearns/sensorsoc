@@ -3,7 +3,7 @@
 module rmssd_engine_tb;
 
   logic clk = 0;
-  logic resetn = 0;
+  logic rst_i = 1;
 
   logic [31:0] rr_interval;
   logic        rr_valid;
@@ -22,7 +22,7 @@ module rmssd_engine_tb;
     .MIN_RR_COUNT(2)
   ) dut (
     .clk_i(clk),
-    .rst_ni(resetn),
+    .rst_i(rst_i),
     .rr_interval_i(rr_interval),
     .rr_valid_i(rr_valid),
     .rr_accepted_i(rr_accepted),
@@ -35,7 +35,7 @@ module rmssd_engine_tb;
   always #10 clk = ~clk;
 
   always @(posedge clk) begin
-    if (!resetn) begin
+    if (rst_i) begin
       rmssd_seen <= 1'b0;
       cap_rmssd_epoch <= '0;
       cap_rr_diff_count <= '0;
@@ -75,9 +75,9 @@ module rmssd_engine_tb;
     rr_accepted = 0;
     epoch_end = 0;
 
-    resetn = 0;
+    rst_i = 1;
     repeat (5) @(posedge clk);
-    resetn = 1;
+    rst_i = 0;
 
     // Epoch 1: accepted RR = [1000,1100,900,1000]
     // diffs = [100,-200,100] => squares = [10000,40000,10000]

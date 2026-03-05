@@ -15,7 +15,7 @@ module ppg_fifo_reader_tb;
   localparam byte REG_FIFO_ACCESS = 8'h60;
 
   logic clk = 0;
-  logic resetn = 0;
+  logic rst_i = 1;
 
   logic [31:0] t_now;
 
@@ -56,8 +56,8 @@ module ppg_fifo_reader_tb;
     .POLL_PERIOD(20),
     .TIMESTAMP_PER_SAMPLE(1)
   ) dut (
-    .clk(clk),
-    .resetn(resetn),
+    .clk_i(clk),
+    .rst_i(rst_i),
 
     .t_now(t_now),
 
@@ -87,7 +87,7 @@ module ppg_fifo_reader_tb;
   always #10 clk = ~clk;
 
   always @(posedge clk) begin
-    if (!resetn) t_now <= 32'd0;
+    if (rst_i) t_now <= 32'd0;
     else t_now <= t_now + 1;
   end
 
@@ -125,12 +125,12 @@ module ppg_fifo_reader_tb;
   logic [SAMPLE_W-1:0] got_samples[$];
 
   always @(posedge clk) begin
-    if (!resetn) sample_count <= 0;
+    if (rst_i) sample_count <= 0;
     else if (ppg_sample_valid) sample_count <= sample_count + 1;
   end
 
   always @(posedge clk) begin
-    if (!resetn) begin
+    if (rst_i) begin
       got_samples.delete();
     end else if (ppg_sample_valid) begin
       got_samples.push_back(ppg_sample);
@@ -238,9 +238,9 @@ module ppg_fifo_reader_tb;
     i2c_rsp_err = 0;
     i2c_rsp_last = 0;
 
-    resetn = 0;
+    rst_i = 1;
     wait_polls(5);
-    resetn = 1;
+    rst_i = 0;
 
     // 1) fifo empty: bytes avail = 0, threshold = 4 words (=8 bytes), no read
     clear_expected();

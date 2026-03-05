@@ -4,43 +4,43 @@ module signal_quality #(
     parameter integer MOTION_W = 16,
     parameter integer CNT_W = 16
 ) (
-    input  wire                     clk_i,
-    input  wire                     rst_ni,
+    input  logic                     clk_i,
+    input  logic                     rst_i,
 
-    input  wire                     epoch_end_i,
+    input  logic                     epoch_end_i,
 
-    input  wire                     beat_event_i,
-    input  wire [7:0]               beat_quality_i,
-    input  wire                     double_beat_i,
-    input  wire                     missed_beat_i,
+    input  logic                     beat_event_i,
+    input  logic [7:0]               beat_quality_i,
+    input  logic                     double_beat_i,
+    input  logic                     missed_beat_i,
 
-    input  wire                     fifo_overflow_i,
-    input  wire                     fifo_i2c_error_i,
+    input  logic                     fifo_overflow_i,
+    input  logic                     fifo_i2c_error_i,
 
-    input  wire                     motion_valid_i,
-    input  wire [MOTION_W-1:0]      motion_intensity_i,
+    input  logic                     motion_valid_i,
+    input  logic [MOTION_W-1:0]      motion_intensity_i,
 
-    input  wire [7:0]               cfg_beat_q_min_i,
-    input  wire [7:0]               cfg_min_valid_fraction_i,
-    input  wire [7:0]               cfg_max_double_i,
-    input  wire [7:0]               cfg_max_missed_i,
-    input  wire [MOTION_W-1:0]      cfg_motion_hi_th_i,
-    input  wire [CNT_W-1:0]         cfg_max_motion_hi_i,
+    input  logic [7:0]               cfg_beat_q_min_i,
+    input  logic [7:0]               cfg_min_valid_fraction_i,
+    input  logic [7:0]               cfg_max_double_i,
+    input  logic [7:0]               cfg_max_missed_i,
+    input  logic [MOTION_W-1:0]      cfg_motion_hi_th_i,
+    input  logic [CNT_W-1:0]         cfg_max_motion_hi_i,
 
-    output reg  [7:0]               invalid_reason_o,
-    output reg                      ml_update_gate_o
+    output logic  [7:0]               invalid_reason_o,
+    output logic                      ml_update_gate_o
 );
 
-    reg [CNT_W-1:0] beat_cnt_r, good_beat_cnt_r;
-    reg [7:0]       double_cnt_r, missed_cnt_r;
-    reg [CNT_W-1:0] motion_hi_cnt_r;
-    reg             overflow_seen_r, i2c_err_seen_r;
+    logic [CNT_W-1:0] beat_cnt_r, good_beat_cnt_r;
+    logic [7:0]       double_cnt_r, missed_cnt_r;
+    logic [CNT_W-1:0] motion_hi_cnt_r;
+    logic             overflow_seen_r, i2c_err_seen_r;
 
-    always @(posedge clk_i or negedge rst_ni) begin
-        reg [15:0] frac_num_v;
-        reg [7:0]  frac_v;
-        reg        no_beats_v, low_frac_v, double_bad_v, missed_bad_v, motion_bad_v;
-        if (!rst_ni) begin
+    always @(posedge clk_i) begin
+        logic [15:0] frac_num_v;
+        logic [7:0]  frac_v;
+        logic        no_beats_v, low_frac_v, double_bad_v, missed_bad_v, motion_bad_v;
+        if (rst_i) begin
             beat_cnt_r <= '0;
             good_beat_cnt_r <= '0;
             double_cnt_r <= 8'd0;
@@ -101,3 +101,5 @@ module signal_quality #(
     end
 
 endmodule
+
+

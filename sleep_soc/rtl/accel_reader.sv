@@ -8,43 +8,40 @@ module accel_reader #(
     parameter integer READ_LEN = 6,
     parameter integer RSP_TIMEOUT_TICKS = 5000
 ) (
-    input  wire                  clk,
-    input  wire                  resetn,
+    input  logic                  clk,
+    input  logic                  rst_i,
 
-    input  wire                  cfg_enable_i,
-    input  wire                  cfg_init_en_i,
-    input  wire [31:0]           cfg_poll_period_ticks_i,
-    input  wire [7:0]            cfg_ctrl1_data_i,
-    input  wire [7:0]            cfg_range_data_i,
-
-    input  wire [31:0]           t_now_i,
+    input  logic                  cfg_enable_i,
+    input  logic                  cfg_init_en_i,
+    input  logic [31:0]           cfg_poll_period_ticks_i,
+    input  logic [7:0]            cfg_ctrl1_data_i,
+    input  logic [7:0]            cfg_range_data_i,
 
     // I2C command interface
-    output reg                   i2c_cmd_valid_o,
-    input  wire                  i2c_cmd_ready_i,
-    output reg  [6:0]            i2c_cmd_addr_o,
-    output reg  [7:0]            i2c_cmd_reg_o,
-    output reg  [7:0]            i2c_cmd_len_o,
-    output reg                   i2c_cmd_write_o,
-    output reg  [7:0]            i2c_cmd_wdata_o,
+    output logic                   i2c_cmd_valid_o,
+    input  logic                  i2c_cmd_ready_i,
+    output logic  [6:0]            i2c_cmd_addr_o,
+    output logic  [7:0]            i2c_cmd_reg_o,
+    output logic  [7:0]            i2c_cmd_len_o,
+    output logic                   i2c_cmd_write_o,
+    output logic  [7:0]            i2c_cmd_wdata_o,
 
     // I2C response interface
-    input  wire                  i2c_rsp_valid_i,
-    input  wire [7:0]            i2c_rsp_data_i,
-    input  wire                  i2c_rsp_done_i,
-    input  wire                  i2c_rsp_error_i,
+    input  logic                  i2c_rsp_valid_i,
+    input  logic [7:0]            i2c_rsp_data_i,
+    input  logic                  i2c_rsp_done_i,
+    input  logic                  i2c_rsp_error_i,
 
     // Output samples
-    output reg  signed [15:0]    ax_o,
-    output reg  signed [15:0]    ay_o,
-    output reg  signed [15:0]    az_o,
-    output reg                   accel_valid_o,
-    output reg  [31:0]           accel_sample_time_o,
+    output logic  signed [15:0]    ax_o,
+    output logic  signed [15:0]    ay_o,
+    output logic  signed [15:0]    az_o,
+    output logic                   accel_valid_o,
 
-    output reg                   init_done_o,
-    output reg                   i2c_error_o,
-    output reg                   timeout_o,
-    output reg                   nack_seen_o
+    output logic                   init_done_o,
+    output logic                   i2c_error_o,
+    output logic                   timeout_o,
+    output logic                   nack_seen_o
 );
 
     typedef enum logic [2:0] {
@@ -61,22 +58,27 @@ module accel_reader #(
     localparam integer READ_IDX_W = $clog2(READ_LEN + 1);
 
     state_t state_r;
-    reg [31:0] poll_cnt_r;
-    reg [31:0] timeout_cnt_r;
-    reg [READ_BUF_W-1:0] read_buf_r;
-    reg [READ_IDX_W-1:0] read_idx_r;
+    logic [31:0] poll_cnt_r;
+    logic [31:0] timeout_cnt_r;
+    logic [READ_BUF_W-1:0] read_buf_r;
+    logic [READ_IDX_W-1:0] read_idx_r;
 
-    wire [31:0] poll_period_eff_w = (cfg_poll_period_ticks_i == 32'd0) ? 32'd1 : cfg_poll_period_ticks_i;
-    wire poll_hit_w = (poll_cnt_r == (poll_period_eff_w - 32'd1));
+    logic [31:0] poll_period_eff_w;
+    logic poll_hit_w;
 
-    wire [31:0] timeout_eff_w = (RSP_TIMEOUT_TICKS <= 0) ? 32'd1 : RSP_TIMEOUT_TICKS[31:0];
-    wire timeout_hit_w = (timeout_cnt_r >= (timeout_eff_w - 32'd1));
+    logic [31:0] timeout_eff_w;
+    logic timeout_hit_w;
+
+    assign poll_period_eff_w = (cfg_poll_period_ticks_i == 32'd0) ? 32'd1 : cfg_poll_period_ticks_i;
+    assign poll_hit_w = (poll_cnt_r == (poll_period_eff_w - 32'd1));
+    assign timeout_eff_w = (RSP_TIMEOUT_TICKS <= 0) ? 32'd1 : RSP_TIMEOUT_TICKS[31:0];
+    assign timeout_hit_w = (timeout_cnt_r >= (timeout_eff_w - 32'd1));
 
     always @(posedge clk) begin
-        reg [READ_BUF_W-1:0] read_buf_next_v;
-        reg [READ_IDX_W-1:0] read_idx_next_v;
+        logic [READ_BUF_W-1:0] read_buf_next_v;
+        logic [READ_IDX_W-1:0] read_idx_next_v;
 
-        if (!resetn) begin
+        if (rst_i) begin
             state_r <= ST_IDLE;
             poll_cnt_r <= 32'd0;
             timeout_cnt_r <= 32'd0;
@@ -94,7 +96,6 @@ module accel_reader #(
             ay_o <= 16'sd0;
             az_o <= 16'sd0;
             accel_valid_o <= 1'b0;
-            accel_sample_time_o <= 32'd0;
 
             init_done_o <= 1'b0;
             i2c_error_o <= 1'b0;
@@ -228,7 +229,6 @@ module accel_reader #(
                                 ay_o <= $signed(read_buf_next_v[31:16]);
                                 az_o <= $signed(read_buf_next_v[47:32]);
                                 accel_valid_o <= 1'b1;
-                                accel_sample_time_o <= t_now_i;
                             end else begin
                                 i2c_error_o <= 1'b1;
                             end
@@ -250,3 +250,5 @@ module accel_reader #(
     end
 
 endmodule
+
+
