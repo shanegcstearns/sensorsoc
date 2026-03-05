@@ -6,10 +6,10 @@ taketwo.v is the final MLP model in RTL that has been transferred into our main 
 * ML Pipeline
   * Train Model (taketwo.py) → Export .ONNX (taketwo.py) → NNGen script (writeverilog.py) → Verilog RTL (taketwo.v) → sleep_soc.
   * To Run:
-    """
+    ```
     python3 taketwo.py
     python3 writeverilog.py
-    """
+    ```
   * Move synthesized verilog and tb into ../sleep_soc/rtl and ../sleep_soc/sim/tb
 # Inside this Directory
 * taketwo.py
