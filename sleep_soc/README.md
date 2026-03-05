@@ -19,8 +19,11 @@ Our overall simulation design in RTL, with simulation and testbenches in sim/tb.
   * 
 * CPU to ML test - command: `make test-cpu-ml`
   * Cocotb test (`cpu_to_ml_tb.py`) that verifies Axi-Lite bridge mmio module, connection to ml wrapper, and ability to read and write
-* X test - command: ``
-  *
+* Sensor pipeline integration test - command: `make sim-sensor-pipeline`
+   * Runs `sim/tb/tb_sensor_pipeline.sv` integrating the I2C master, LIS2DW12 accel slave model, ADPD144RI PPG slave model, accel reader, PPG FIFO reader, motion preprocessor, and global timer
+   * Slave models stream real sensor data from `sim/data/accel_digital.csv` and `sim/data/ppg_digital.csv`
+   * PASS criteria: ≥25 accel samples at 25Hz, ≥3 PPG samples, ≥1 motion energy epoch
+   * Outputs a waveform at `sim/waves/sensor_pipeline.vcd` (or run directly: `vvp sim/build/tb_se
 * X test - command: ``
   *
 * X test - command: ``
