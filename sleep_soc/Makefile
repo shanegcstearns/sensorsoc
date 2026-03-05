@@ -6,13 +6,28 @@
 #   - Simple firmware build (RISC-V GCC -> .elf/.bin/.hex)
 #
 # Usage:
-#   make sim-soc                     # compile + run tb_soc (reads firmware/build/firmware.hex)
-#   make test-mmio                   # cocotb for test_mmio
-#   make test-timer                  # cocotb for timer_mmio
-#   make firmware-sleepwake          # firmware from firmware/tests/test_sleepwake.c
-#   make firmware-gpio               # firmware from firmware/tests/test_gpio.c
-#   make firmware-sleepwake-periodic # firmware from firmware/tests/test_sleepwake_periodic.c
-#   make clean                       # remove build outputs
+#
+#   # Build firmware only (per variant)
+#   make firmware FW_VARIANT=test_sleepwake
+#   make firmware FW_VARIANT=test_gpio
+#   make firmware FW_VARIANT=test_sleepwake_periodic
+#   make firmware FW_VARIANT=main
+#
+#   # Compile + run SoC testbench with a chosen firmware variant
+#   make sim-soc                        # defaults to FW_VARIANT=test_sleepwake
+#   make sim-soc FW_VARIANT=test_gpio
+#   make sim-soc FW_VARIANT=test_sleepwake_periodic
+#   make sim-soc FW_VARIANT=main
+#
+#   # Unit tests
+#   make test-mmio
+#   make test-timer
+#
+#   # Standalone SV testbench
+#   make sim-reset-ctrl
+#
+#   # Cleanup
+#   make clean
 #
 # NOTE:
 #   This Makefile expects a small helper script at:
@@ -89,20 +104,21 @@ $(SIM_BUILD) $(FW_BUILD):
 # ----------------------------
 SOC_RTL_SRCS := \
   $(RTL_DIR)/soc_top.v \
+  $(RTL_DIR)/simple_sram.v \
   $(RTL_DIR)/third_party/picorv32.v \
   $(RTL_DIR)/gpio_mmio.v \
   $(RTL_DIR)/test_mmio.v \
   $(RTL_DIR)/timer_mmio.v \
   $(RTL_DIR)/ml_stub_mmio.v \
-  $(RTL_DIR)/pwrctrl_mmio.v
+  $(RTL_DIR)/irq_ctrl_mmio.v \
+  $(RTL_DIR)/pwrctrl_mmio.v \
+  $(RTL_DIR)/host_i2c_target.sv \
+  $(RTL_DIR)/host_i2c_bridge_regs.sv
 
 SOC_TB_SRCS  := $(TB_DIR)/tb_soc.sv
 SOC_VVP      := sim_soc.vvp
-
-# Default firmware outputs used by soc_top
-FW_HEX       := $(FW_BUILD)/firmware.hex
-FW_ELF       := $(FW_BUILD)/firmware.elf
-FW_BIN       := $(FW_BUILD)/firmware.bin
+IRQ_TB_SRCS  := $(TB_DIR)/tb_irq.sv
+IRQ_VVP      := sim_irq.vvp
 
 # ----------------------------
 # Cocotb configuration helper
@@ -121,20 +137,37 @@ define RUN_COCOTB_ICARUS
 endef
 
 # ----------------------------
-# Firmware build rules
+# Firmware build rules (per-variant output dirs)
 # ----------------------------
-# The canonical firmware for tb_soc is firmware/build/firmware.hex.
-# Choose which C file populates it by calling:
-#   make firmware-sleepwake
-#   make firmware-gpio
-#   make firmware-sleepwake-periodic
+# Produces:
+#   firmware/build/<variant>/firmware.{elf,bin,hex}
+#
+# Variants:
+#   main
+#   test_sleepwake
+#   test_gpio
+#   test_sleepwake_periodic
 
-FW_SRC ?= $(FW_TESTS)/test_sleepwake.c
+FW_VARIANT ?= test_sleepwake
 
-.PHONY: firmware
-firmware: $(FW_HEX)
+# Variant sources
+FW_C_main                  := $(FW_DIR)/main.c
+FW_C_test_sleepwake         := $(FW_TESTS)/test_sleepwake.c
+FW_C_test_gpio              := $(FW_TESTS)/test_gpio.c
+FW_C_test_sleepwake_periodic:= $(FW_TESTS)/test_sleepwake_periodic.c
 
-$(FW_HEX): $(FW_DIR)/start.S $(FW_DIR)/linker.ld $(FW_SRC) $(BIN2HEX_PY) | $(FW_BUILD)
+# Select the C source based on FW_VARIANT
+FW_SRC = $(FW_C_$(FW_VARIANT))
+
+# Per-variant output paths
+FW_OUTDIR := $(FW_DIR)/build/$(FW_VARIANT)
+FW_ELF    := $(FW_OUTDIR)/firmware.elf
+FW_BIN    := $(FW_OUTDIR)/firmware.bin
+FW_HEX    := $(FW_OUTDIR)/firmware.hex
+
+# Build rule
+$(FW_HEX): $(FW_DIR)/start.S $(FW_DIR)/linker.ld $(FW_SRC) $(BIN2HEX_PY)
+	@mkdir -p $(FW_OUTDIR)
 	@echo "[FW] Building $(FW_SRC) -> $(FW_HEX)"
 	$(RISCV_GCC) \
 	  -march=rv32imc -mabi=ilp32 \
@@ -147,15 +180,24 @@ $(FW_HEX): $(FW_DIR)/start.S $(FW_DIR)/linker.ld $(FW_SRC) $(BIN2HEX_PY) | $(FW_
 	@echo "[FW] Converting $(FW_BIN) -> $(FW_HEX) (32-bit little-endian words)"
 	@$(PYTHON) $(BIN2HEX_PY) $(FW_BIN) $(FW_HEX)
 
-.PHONY: firmware-sleepwake firmware-gpio firmware-sleepwake-periodic
+.PHONY: firmware firmware-main firmware-sleepwake firmware-gpio firmware-sleepwake-periodic
+
+# Generic "firmware" builds whatever FW_VARIANT is set to
+firmware: $(FW_HEX)
+
+firmware-main:
+	@$(MAKE) FW_VARIANT=main firmware
+
 firmware-sleepwake:
-	@$(MAKE) FW_SRC=$(FW_TESTS)/test_sleepwake.c firmware
+	@$(MAKE) FW_VARIANT=test_sleepwake firmware
 
 firmware-gpio:
-	@$(MAKE) FW_SRC=$(FW_TESTS)/test_gpio.c firmware
+	@$(MAKE) FW_VARIANT=test_gpio firmware
 
 firmware-sleepwake-periodic:
-	@$(MAKE) FW_SRC=$(FW_TESTS)/test_sleepwake_periodic.c firmware
+	@$(MAKE) FW_VARIANT=test_sleepwake_periodic firmware
+
+
 
 # ----------------------------
 # SoC simulation (SystemVerilog tb)
@@ -164,15 +206,34 @@ firmware-sleepwake-periodic:
 build-soc: $(SOC_VVP)
 
 $(SOC_VVP): $(SOC_TB_SRCS) $(SOC_RTL_SRCS)
-	@echo "[SIM] Building $@"
+	@echo "[SIM] Building $@ (FW=$(FW_HEX))"
 	$(IVERILOG) -g2012 -s tb_soc -o $@ \
+	  -P tb_soc.FW=\"$(FW_HEX)\" \
 	  $(SOC_TB_SRCS) \
 	  $(SOC_RTL_SRCS)
 
-# Run tb_soc. Expects firmware/build/firmware.hex to exist.
-sim-soc: $(SOC_VVP) $(FW_HEX) | $(SIM_BUILD)
-	@echo "[SIM] Running tb_soc (will read $(FW_HEX))"
+# Run tb_soc. Uses FW_VARIANT to choose which firmware hex is built/loaded.
+# Example:
+#   make sim-soc FW_VARIANT=test_gpio
+#   make sim-soc FW_VARIANT=test_sleepwake_periodic
+sim-soc: $(SOC_VVP) firmware | $(SIM_BUILD)
+	@echo "[SIM] Running tb_soc (FW=$(FW_HEX))"
 	$(VVP) $(SOC_VVP)
+# ----------------------------
+# IRQ testbench (tb_irq)
+# ----------------------------
+.PHONY: build-irq sim-irq
+build-irq: $(IRQ_VVP)
+
+$(IRQ_VVP): $(IRQ_TB_SRCS) $(SOC_RTL_SRCS)
+	@echo "[SIM] Building $@"
+	$(IVERILOG) -g2012 -s tb_irq -o $@ \
+	  $(IRQ_TB_SRCS) \
+	  $(SOC_RTL_SRCS)
+
+sim-irq: $(IRQ_VVP) $(FW_HEX_MAIN) | $(SIM_BUILD)
+	@echo "[SIM] Running tb_irq (will read $(FW_HEX_MAIN))"
+	$(VVP) $(IRQ_VVP)
 
 # ----------------------------
 # Cocotb: test_mmio
@@ -222,6 +283,36 @@ test-timer: $(TIMER_VVP)
 	$(VVP) -M "$(COCOTB_LIBDIR)" -m libcocotbvpi_icarus $(TIMER_VVP)
 
 # ============================================================
+# Cocotb: ML test 
+# ============================================================
+
+.PHONY: test-ml
+test-ml:
+	$(MAKE) -C sim/tb/ml
+
+# ============================================================
+# RESET CONTROLLER TB (reset_ctrl_tb)
+# ============================================================
+
+RESET_CTRL_TOP     := reset_ctrl_tb
+RESET_CTRL_VVP     := $(BUILD_DIR)/$(RESET_CTRL_TOP).vvp
+RESET_CTRL_SOURCES := sim/tb/reset_ctrl_tb.sv rtl/reset_ctrl.v
+RESET_CTRL_VCD     := $(WAVE_DIR)/reset_ctrl.vcd
+
+$(RESET_CTRL_VVP): $(RESET_CTRL_SOURCES) | $(BUILD_DIR)
+	@echo "[SIM] Building $@"
+	$(IVERILOG) -g2012 -Wall -o $@ $^
+
+.PHONY: sim-reset-ctrl
+sim-reset-ctrl: $(RESET_CTRL_VVP)
+	@echo "== Running $(RESET_CTRL_TOP) (VCD -> $(RESET_CTRL_VCD)) =="
+	@mkdir -p $(WAVE_DIR)
+	@cd $(WAVE_DIR) && $(VVP) $(abspath $(RESET_CTRL_VVP))
+
+.PHONY: clean-reset-ctrl
+clean-reset-ctrl:
+	rm -f $(RESET_CTRL_VVP) $(RESET_CTRL_VCD)
+# ============================================================
 # MOTION PREPROCESS
 # ============================================================
 
@@ -263,7 +354,7 @@ sim-ppg-fifo-reader: $(PPG_FIFO_READER_VVP)
 
 PPG_BEAT_RR_TOP     := ppg_beat_detect_rr_calc_tb
 PPG_BEAT_RR_VVP     := $(BUILD_DIR)/$(PPG_BEAT_RR_TOP).vvp
-PPG_BEAT_RR_SOURCES := sim/tb/ppg_beat_detect_rr_calc_tb.sv rtl/sensor_processing/ppg_beat_detect_rr_calc.sv
+PPG_BEAT_RR_SOURCES := sim/tb/ppg_beat_detect_rr_calc_tb.sv rtl/sensor_processing/ppg_beat_detect_rr_calc.sv rtl/sensor_processing/ewma_baseline.sv
 PPG_BEAT_RR_VCD     := $(WAVE_DIR)/ppg_beat_detect_rr_calc_tb.vcd
 
 $(PPG_BEAT_RR_VVP): $(PPG_BEAT_RR_SOURCES)
@@ -274,6 +365,115 @@ sim-ppg-beat-rr: $(PPG_BEAT_RR_VVP)
 	@echo "== Running $(PPG_BEAT_RR_TOP) (VCD -> $(PPG_BEAT_RR_VCD)) =="
 	@mkdir -p $(WAVE_DIR)
 	@cd $(WAVE_DIR) && $(VVP) $(abspath $(PPG_BEAT_RR_VVP))
+
+# ============================================================
+# ACCEL READER
+# ============================================================
+
+ACCEL_READER_TOP     := accel_reader_tb
+ACCEL_READER_VVP     := $(BUILD_DIR)/$(ACCEL_READER_TOP).vvp
+ACCEL_READER_SOURCES := sim/tb/accel_reader_tb.sv rtl/sensor_processing/accel_reader.sv
+ACCEL_READER_VCD     := $(WAVE_DIR)/accel_reader_tb.vcd
+
+$(ACCEL_READER_VVP): $(ACCEL_READER_SOURCES)
+	$(IVERILOG) -g2012 -o $@ $^
+
+.PHONY: sim-accel-reader
+sim-accel-reader: $(ACCEL_READER_VVP)
+	@echo "== Running $(ACCEL_READER_TOP) (VCD -> $(ACCEL_READER_VCD)) =="
+	@mkdir -p $(WAVE_DIR)
+	@cd $(WAVE_DIR) && $(VVP) $(abspath $(ACCEL_READER_VVP))
+
+# ============================================================
+# RMSSD ENGINE
+# ============================================================
+
+RMSSD_ENGINE_TOP     := rmssd_engine_tb
+RMSSD_ENGINE_VVP     := $(BUILD_DIR)/$(RMSSD_ENGINE_TOP).vvp
+RMSSD_ENGINE_SOURCES := sim/tb/rmssd_engine_tb.sv rtl/sensor_processing/rmssd_engine.sv rtl/sensor_processing/ewma_baseline.sv
+RMSSD_ENGINE_VCD     := $(WAVE_DIR)/rmssd_engine_tb.vcd
+
+$(RMSSD_ENGINE_VVP): $(RMSSD_ENGINE_SOURCES)
+	$(IVERILOG) -g2012 -o $@ $^
+
+.PHONY: sim-rmssd-engine
+sim-rmssd-engine: $(RMSSD_ENGINE_VVP)
+	@echo "== Running $(RMSSD_ENGINE_TOP) (VCD -> $(RMSSD_ENGINE_VCD)) =="
+	@mkdir -p $(WAVE_DIR)
+	@cd $(WAVE_DIR) && $(VVP) $(abspath $(RMSSD_ENGINE_VVP))
+
+# ============================================================
+# SIGNAL QUALITY
+# ============================================================
+
+SIGNAL_QUALITY_TOP     := signal_quality_tb
+SIGNAL_QUALITY_VVP     := $(BUILD_DIR)/$(SIGNAL_QUALITY_TOP).vvp
+SIGNAL_QUALITY_SOURCES := sim/tb/signal_quality_tb.sv rtl/sensor_processing/signal_quality.sv
+SIGNAL_QUALITY_VCD     := $(WAVE_DIR)/signal_quality_tb.vcd
+
+$(SIGNAL_QUALITY_VVP): $(SIGNAL_QUALITY_SOURCES)
+	$(IVERILOG) -g2012 -o $@ $^
+
+.PHONY: sim-signal-quality
+sim-signal-quality: $(SIGNAL_QUALITY_VVP)
+	@echo "== Running $(SIGNAL_QUALITY_TOP) (VCD -> $(SIGNAL_QUALITY_VCD)) =="
+	@mkdir -p $(WAVE_DIR)
+	@cd $(WAVE_DIR) && $(VVP) $(abspath $(SIGNAL_QUALITY_VVP))
+
+# ============================================================
+# COS LUT TIMER
+# ============================================================
+
+COS_LUT_TIMER_TOP     := cos_lut_timer_tb
+COS_LUT_TIMER_VVP     := $(BUILD_DIR)/$(COS_LUT_TIMER_TOP).vvp
+COS_LUT_TIMER_SOURCES := sim/tb/cos_lut_timer_tb.sv rtl/cos_lut_timer.sv
+COS_LUT_TIMER_VCD     := $(WAVE_DIR)/cos_lut_timer_tb.vcd
+
+$(COS_LUT_TIMER_VVP): $(COS_LUT_TIMER_SOURCES)
+	$(IVERILOG) -g2012 -o $@ $^
+
+.PHONY: sim-cos-lut-timer
+sim-cos-lut-timer: $(COS_LUT_TIMER_VVP)
+	@echo "== Running $(COS_LUT_TIMER_TOP) (VCD -> $(COS_LUT_TIMER_VCD)) =="
+	@mkdir -p $(WAVE_DIR)
+	@cd $(WAVE_DIR) && $(VVP) $(abspath $(COS_LUT_TIMER_VVP))
+
+# ============================================================
+# HOST I2C TARGET
+# ============================================================
+
+HOST_I2C_TARGET_TOP     := tb_host_i2c_target
+HOST_I2C_TARGET_VVP     := $(BUILD_DIR)/$(HOST_I2C_TARGET_TOP).vvp
+HOST_I2C_TARGET_SOURCES := sim/tb/tb_host_i2c_target.sv \
+                           rtl/host_i2c_target.sv \
+                           rtl/host_i2c_bridge_regs.sv
+
+$(HOST_I2C_TARGET_VVP): $(HOST_I2C_TARGET_SOURCES)
+	$(IVERILOG) -g2012 -s $(HOST_I2C_TARGET_TOP) -o $@ $^
+
+.PHONY: sim-host-i2c-target
+sim-host-i2c-target: $(HOST_I2C_TARGET_VVP)
+	@echo "== Running $(HOST_I2C_TARGET_TOP) =="
+	$(VVP) $(HOST_I2C_TARGET_VVP)
+
+# ============================================================
+# SOC HOST I2C IRQ
+# ============================================================
+
+SOC_I2C_IRQ_TOP     := tb_soc_host_i2c_irq
+SOC_I2C_IRQ_VVP     := $(BUILD_DIR)/$(SOC_I2C_IRQ_TOP).vvp
+SOC_I2C_IRQ_SOURCES := sim/tb/tb_soc_host_i2c_irq.sv \
+                       $(SOC_RTL_SRCS) \
+                       rtl/host_i2c_target.sv \
+                       rtl/host_i2c_bridge_regs.sv
+
+$(SOC_I2C_IRQ_VVP): $(SOC_I2C_IRQ_SOURCES)
+	$(IVERILOG) -g2012 -s $(SOC_I2C_IRQ_TOP) -o $@ $^
+
+.PHONY: sim-soc-host-i2c-irq
+sim-soc-host-i2c-irq: $(SOC_I2C_IRQ_VVP)
+	@echo "== Running $(SOC_I2C_IRQ_TOP) =="
+	$(VVP) $(SOC_I2C_IRQ_VVP)
 
 # ============================================================
 # Cleanup

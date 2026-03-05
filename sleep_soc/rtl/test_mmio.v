@@ -1,46 +1,142 @@
 `timescale 1ns/1ps
 
+//------------------------------------------------------------------------------
+// test_mmio.v
+//
+// Simple Test / Debug MMIO Peripheral
+//
+// Purpose
+// -------
+// This module provides a very small MMIO register block used primarily for
+// simulation bring-up and firmware debugging. It allows firmware running on
+// the CPU to communicate simple status codes to the testbench or external
+// debug logic.
+//
+// In the Sleep SoC simulation environment, firmware can write values to these
+// registers to indicate:
+//
+//   • Test PASS
+//   • Test FAIL
+//   • Debug checkpoints or error codes
+//
+// The testbench can monitor `status_o` and `code_o` to determine whether the
+// firmware executed correctly.
+//
+// Typical firmware usage
+// ----------------------
+// Example:
+//
+//   STATUS = 0xCAFEBABE  -> Test passed
+//   STATUS = 0xDEADBEEF  -> Test failed
+//
+//   CODE register may contain:
+//     • step numbers
+//     • error identifiers
+//     • debug values
+//
+// This peripheral is mainly intended for simulation and bring-up rather than
+// final hardware functionality.
+//
+//------------------------------------------------------------------------------
+// Memory Map (BASE_ADDR = 0x0300_F000)
+//
+// Address Offset | Register | Access | Description
+// ------------------------------------------------------------
+// 0x00           | STATUS   | RW     | Firmware test status
+// 0x04           | CODE     | RW     | Debug code or step indicator
+//
+//------------------------------------------------------------------------------
+// Bus Interface Behavior
+// ----------------------
+// • Address decode uses a 4KB page comparison:
+//       mem_addr[31:12] == BASE_ADDR[31:12]
+//
+// • When selected (`sel` asserted):
+//       mem_ready is asserted for one cycle
+//
+// • Reads:
+//       mem_rdata returns the selected register value
+//
+// • Writes:
+//       If any byte write strobe is active (mem_wstrb != 0),
+//       the register is updated with mem_wdata.
+//
+// Note:
+// This simple module does not implement per-byte write masking. Any non-zero
+// write strobe updates the entire 32-bit register. This is acceptable for
+// simulation/debug purposes.
+//
+//------------------------------------------------------------------------------
+
 module test_mmio #(
-    parameter BASE_ADDR = 32'h0300_F000
+    parameter BASE_ADDR = 32'h0300_F000   // Base address of test MMIO region
 )(
     input  wire        clk,
     input  wire        resetn,
 
-    input  wire        mem_valid,
-    input  wire [31:0] mem_addr,
-    input  wire [31:0] mem_wdata,
-    input  wire [3:0]  mem_wstrb,
+    // Memory bus interface
+    input  wire        mem_valid,         // request valid
+    input  wire [31:0] mem_addr,          // address
+    input  wire [31:0] mem_wdata,         // write data
+    input  wire [3:0]  mem_wstrb,         // write byte strobes
 
-    output reg         mem_ready,
-    output reg  [31:0] mem_rdata,
+    output reg         mem_ready,         // transaction complete
+    output reg  [31:0] mem_rdata,         // read data
 
-    output reg  [31:0] status_o,
-    output reg  [31:0] code_o
+    // Debug outputs (observed by testbench)
+    output reg  [31:0] status_o,          // firmware test status
+    output reg  [31:0] code_o             // debug code / step number
 );
+
+    //-------------------------------------------------------------------------
+    // Address decode
+    //-------------------------------------------------------------------------
+    // Select this peripheral when the CPU accesses the same 4KB page
+    // as BASE_ADDR.
     wire sel = mem_valid && (mem_addr[31:12] == BASE_ADDR[31:12]);
+
+    // Compute byte offset inside the MMIO page
     wire [31:0] off = mem_addr - BASE_ADDR;
 
-    localparam OFF_STATUS = 32'h0;
-    localparam OFF_CODE   = 32'h4;
+    //-------------------------------------------------------------------------
+    // Register offsets
+    //-------------------------------------------------------------------------
+    localparam OFF_STATUS = 32'h0;  // status register
+    localparam OFF_CODE   = 32'h4;  // debug code register
 
+    //-------------------------------------------------------------------------
+    // MMIO register logic
+    //-------------------------------------------------------------------------
     always @(posedge clk) begin
         if (!resetn) begin
+            // Reset state
             mem_ready <= 1'b0;
             mem_rdata <= 32'h0;
+
             status_o  <= 32'h0;
             code_o    <= 32'h0;
+
         end else begin
+            // Default: no response
             mem_ready <= 1'b0;
 
+            // Peripheral selected by CPU
             if (sel) begin
+                // One-cycle ready handshake
                 mem_ready <= 1'b1;
 
+                // -------------------------
+                // Read path
+                // -------------------------
                 case (off)
                     OFF_STATUS: mem_rdata <= status_o;
                     OFF_CODE:   mem_rdata <= code_o;
                     default:    mem_rdata <= 32'h0;
                 endcase
 
+                // -------------------------
+                // Write path
+                // -------------------------
                 if (mem_wstrb != 4'b0000) begin
                     case (off)
                         OFF_STATUS: status_o <= mem_wdata;
@@ -51,4 +147,5 @@ module test_mmio #(
             end
         end
     end
+
 endmodule

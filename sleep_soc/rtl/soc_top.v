@@ -12,12 +12,17 @@ module soc_top #(
     parameter PWR_BASE    = 32'h0300_1000,
     parameter TIMER_BASE  = 32'h0300_2000,
     parameter ML_BASE     = 32'h0300_3000,
+    parameter IRQC_BASE   = 32'h0300_5000,
     parameter TEST_BASE = 32'h0300_F000
 )(
     input  wire        clk,        // always-on clock
     input  wire        resetn,     // active-low reset (always-on)
 
     output wire [7:0]  gpio_out,   // good for LEDs in FPGA later
+
+    // Host I2C target interface
+    input  wire        i2c_scl_i,
+    inout  wire        i2c_sda_io,
 
     // optional: expose for waveform/debug
     output wire        cpu_clk_o,
@@ -51,13 +56,13 @@ module soc_top #(
     wire [31:0] mem_rdata;
     wire trap;
 
-    // IRQ not required yet, add later
-    wire [31:0] irq = 32'b0;
+    // IRQ wiring is provided by SoC IRQ controller.
+    wire [31:0] irq;
 
     //Tweak these later when I add flash/XIP.
     localparam [31:0] STACKADDR      = 4*MEM_WORDS;
     localparam [31:0] PROGADDR_RESET = 32'h0000_0000;
-    localparam [31:0] PROGADDR_IRQ   = 32'h0000_0000;
+    localparam [31:0] PROGADDR_IRQ   = 32'h0000_0010;
 
     picorv32 #(
         .STACKADDR(STACKADDR),
@@ -69,8 +74,8 @@ module soc_top #(
         .ENABLE_MUL(1),
         .ENABLE_DIV(1),
         .ENABLE_FAST_MUL(0),
-        .ENABLE_IRQ(0),
-        .ENABLE_IRQ_QREGS(0)
+        .ENABLE_IRQ(1),
+        .ENABLE_IRQ_QREGS(1)
     ) cpu (
         .clk       (cpu_clk),
         .resetn    (resetn),
@@ -150,23 +155,112 @@ module soc_top #(
         .rdata_o  (timer_rdata)
     );
 
-    // ML stub block
-    wire        ml_ready;
-    wire [31:0] ml_rdata;
-    wire        ml_event;
-    wire [31:0] ml_score;
+  // ML AXI-Lite bridge
+  wire        ml_ready;
+  wire [31:0] ml_rdata;
+  wire        ml_event;
+  wire [31:0] ml_score;
 
-    ml_stub_mmio #(.BASE_ADDR(ML_BASE)) u_ml (
+  // AXI-Lite wires between bridge and taketwo_wrap
+  wire [31:0] ml_saxi_awaddr, ml_saxi_wdata, ml_saxi_araddr;
+  wire [2:0]  ml_saxi_awprot, ml_saxi_arprot;
+  wire        ml_saxi_awvalid, ml_saxi_awready;
+  wire [3:0]  ml_saxi_wstrb;
+  wire        ml_saxi_wvalid, ml_saxi_wready;
+  wire [1:0]  ml_saxi_bresp;
+  wire        ml_saxi_bvalid, ml_saxi_bready;
+  wire [31:0] ml_saxi_rdata;
+  wire [1:0]  ml_saxi_rresp;
+  wire        ml_saxi_rvalid, ml_saxi_rready;
+
+  ml_axil_bridge_mmio #(.BASE_ADDR(ML_BASE)) u_ml_bridge (
+    .clk(clk),
+    .resetn(resetn),
+
+    .mem_valid(mmio_sel),
+    .mem_addr(mem_addr),
+    .mem_wdata(mem_wdata),
+    .mem_wstrb(mem_wstrb),
+
+    .mem_ready(ml_ready),
+    .mem_rdata(ml_rdata),
+
+    .event_o(ml_event),
+    .score_o(ml_score),
+
+    .saxi_awaddr (ml_saxi_awaddr),
+    .saxi_awprot (ml_saxi_awprot),
+    .saxi_awvalid(ml_saxi_awvalid),
+    .saxi_awready(ml_saxi_awready),
+
+    .saxi_wdata  (ml_saxi_wdata),
+    .saxi_wstrb  (ml_saxi_wstrb),
+    .saxi_wvalid (ml_saxi_wvalid),
+    .saxi_wready (ml_saxi_wready),
+
+    .saxi_bresp  (ml_saxi_bresp),
+    .saxi_bvalid (ml_saxi_bvalid),
+    .saxi_bready (ml_saxi_bready),
+
+    .saxi_araddr (ml_saxi_araddr),
+    .saxi_arprot (ml_saxi_arprot),
+    .saxi_arvalid(ml_saxi_arvalid),
+    .saxi_arready(ml_saxi_arready),
+
+    .saxi_rdata  (ml_saxi_rdata),
+    .saxi_rresp  (ml_saxi_rresp),
+    .saxi_rvalid (ml_saxi_rvalid),
+    .saxi_rready (ml_saxi_rready)
+  );
+
+    // Host I2C target + bridge registers
+    wire       i2c_wr_en, i2c_proto_err;
+    wire [7:0] i2c_wr_addr, i2c_wr_data, i2c_rd_addr, i2c_rd_data;
+    wire       host_i2c_irq_event;
+
+    host_i2c_target #(.SLAVE_ADDR(7'h42)) u_i2c_target (
+        .clk        (clk),
+        .resetn     (resetn),
+        .i2c_scl_i  (i2c_scl_i),
+        .i2c_sda_io (i2c_sda_io),
+        .wr_en_o    (i2c_wr_en),
+        .wr_addr_o  (i2c_wr_addr),
+        .wr_data_o  (i2c_wr_data),
+        .rd_addr_o  (i2c_rd_addr),
+        .rd_data_i  (i2c_rd_data),
+        .proto_err_o(i2c_proto_err)
+    );
+
+    host_i2c_bridge_regs u_i2c_bridge (
+        .clk        (clk),
+        .resetn     (resetn),
+        .wr_en_i    (i2c_wr_en),
+        .wr_addr_i  (i2c_wr_addr),
+        .wr_data_i  (i2c_wr_data),
+        .rd_addr_i  (i2c_rd_addr),
+        .rd_data_o  (i2c_rd_data),
+        .proto_err_i(i2c_proto_err),
+        .event_o    (host_i2c_irq_event)
+    );
+
+    // IRQ controller: pending/mask/wake filtering + MMIO visibility.
+    wire        irqc_ready;
+    wire [31:0] irqc_rdata;
+    wire        irqc_wake_req;
+    wire [31:0] irq_sources = {29'b0, host_i2c_irq_event, ml_event, timer_event};
+
+    irq_ctrl_mmio #(.BASE_ADDR(IRQC_BASE)) u_irqc (
         .clk      (clk),
         .resetn   (resetn),
         .mem_valid(mmio_sel),
         .mem_addr (mem_addr),
         .mem_wdata(mem_wdata),
         .mem_wstrb(mem_wstrb),
-        .mem_ready(ml_ready),
-        .mem_rdata(ml_rdata),
-        .event_o  (ml_event),
-        .score_o  (ml_score)
+        .mem_ready(irqc_ready),
+        .mem_rdata(irqc_rdata),
+        .irq_src_i(irq_sources),
+        .irq_o    (irq),
+        .wake_req_o(irqc_wake_req)
     );
 
     // Power controller MMIO: sleep request + wake status/reason
@@ -176,7 +270,7 @@ module soc_top #(
 
     // Wake sources (always-on)
     wire [31:0] wake_sources;
-    assign wake_sources = {30'b0, ml_event, timer_event}; // bit1=ML, bit0=timer
+    assign wake_sources = irq_sources;
 
     pwrctrl_mmio #(.BASE_ADDR(PWR_BASE)) u_pwr (
         .clk        (clk),
@@ -212,13 +306,14 @@ module soc_top #(
 
 
     // MMIO bus response mux (to PicoRV32)
-    wire mmio_ready = gpio_ready | pwr_ready | timer_ready | ml_ready | test_ready;
+    wire mmio_ready = gpio_ready | pwr_ready | timer_ready | ml_ready | irqc_ready | test_ready;
 
     wire [31:0] mmio_rdata =
         gpio_ready  ? gpio_rdata  :
         pwr_ready   ? pwr_rdata   :
         timer_ready ? timer_rdata :
         ml_ready    ? ml_rdata    :
+        irqc_ready  ? irqc_rdata  :
         test_ready  ? test_rdata  :
         32'h0000_0000;
 
@@ -256,9 +351,9 @@ always @(posedge clk) begin
       cpu_idle_seen <= cpu_idle_seen | (~mem_valid);
     end
 
-    // Wake has highest priority (works even when cpu_clk_en=0)
     if (sleeping) begin
-      if (wake_event) begin
+      // Wake has highest priority when sleeping.
+      if (irqc_wake_req || wake_event) begin
         cpu_clk_en    <= 1'b1;
         sleeping      <= 1'b0;
         cpu_idle_seen <= 1'b0; // require a fresh idle observation before sleeping again
@@ -268,7 +363,7 @@ always @(posedge clk) begin
       //  - firmware requested it
       //  - we've observed at least one idle cycle (prevents mid-transaction gating)
       //  - no wake event pending
-      if (sleep_req && cpu_idle_seen && !wake_event) begin
+      if (sleep_req && cpu_idle_seen && !(irqc_wake_req || wake_event)) begin
         cpu_clk_en    <= 1'b0;
         sleeping      <= 1'b1;
         cpu_idle_seen <= 1'b0;
@@ -276,62 +371,4 @@ always @(posedge clk) begin
     end
   end
 end
-endmodule
-
-
-// Simple synchronous SRAM with optional init file for simulation
-// - Responds in 1 cycle when valid
-// - Supports byte writes via wstrb
-module simple_sram #(
-    parameter integer WORDS = 1024,
-    parameter INIT_HEX = ""
-)(
-    input  wire        clk,
-    input  wire        resetn,
-
-    input  wire        valid,
-    output reg         ready,
-
-    input  wire [3:0]  wstrb,
-    input  wire [31:0] addr,   // byte address
-    input  wire [31:0] wdata,
-    output reg  [31:0] rdata
-);
-    reg [31:0] mem [0:WORDS-1];
-
-    // optional init
-    integer i;
-    initial begin
-        if (INIT_HEX != "") begin
-            $display("simple_sram: loading INIT_HEX=%s", INIT_HEX);
-            $readmemh(INIT_HEX, mem);
-            $display("SRAM[0]=%08x SRAM[1]=%08x SRAM[2]=%08x SRAM[3]=%08x",
-         mem[0], mem[1], mem[2], mem[3]);
-
-        end else begin
-            // default clear (optional)
-            for (i = 0; i < WORDS; i = i + 1)
-                mem[i] = 32'h0000_0000;
-        end
-    end
-
-    wire [31:0] word_index = addr >> 2;
-
-    always @(posedge clk) begin
-        if (!resetn) begin
-            ready <= 1'b0;
-            rdata <= 32'h0;
-        end else begin
-            ready <= 1'b0;
-            if (valid) begin
-                ready <= 1'b1;
-                rdata <= mem[word_index];
-
-                if (wstrb[0]) mem[word_index][ 7: 0] <= wdata[ 7: 0];
-                if (wstrb[1]) mem[word_index][15: 8] <= wdata[15: 8];
-                if (wstrb[2]) mem[word_index][23:16] <= wdata[23:16];
-                if (wstrb[3]) mem[word_index][31:24] <= wdata[31:24];
-            end
-        end
-    end
 endmodule

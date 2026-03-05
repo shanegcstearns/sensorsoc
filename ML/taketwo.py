@@ -119,7 +119,8 @@ features = [
     "movement",    # body movement magnitude from accel
     "cosine",      # cosine of time in seconds over 24 hr period
     "delta_hr",    # change in heartrate from baseline
-    "hr_rmssd"    # hrv
+    "hr_rmssd",    # hrv
+    "label"        # label
     #"hrv_mov"      # hrv and movement
 ]
 
@@ -132,7 +133,7 @@ df["hr_rmssd"] /= 0.05
 
 # clamp features to [-1, 1] to avoid outliers dominating training and to match quantization range
 for col in features:
-    df[col] = df[col].clip(-1.0, 1.0)
+    df[col] = df[col].clip(-8.0, 7.0)
 
 X = df[features].fillna(0).to_numpy()
 y = df["label"].to_numpy()

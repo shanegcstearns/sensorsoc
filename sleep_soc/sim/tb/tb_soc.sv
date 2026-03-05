@@ -1,8 +1,12 @@
 `timescale 1ns/1ps
 
-module tb_soc;
+module tb_soc #(
+  parameter string FW = "firmware/build/test_sleepwake/firmware.hex"
+);
 
-  localparam string FW = "firmware/build/firmware.hex";
+  initial begin
+    $display("[TB] Firmware file (parameter) = %s", FW);
+  end
 
   // Optional: page constants for runtime filtering (NOT hierarchical)
   localparam logic [31:12] TIMER_PAGE = 20'h03002;
@@ -16,12 +20,17 @@ module tb_soc;
   wire cpu_clk_o, cpu_awake_o;
 
   // DUT
+  wire i2c_sda;
+  assign i2c_sda = 1'bz;
+
   soc_top #(
     .MEM_WORDS(1024),
     .FIRMWARE_HEX(FW)
   ) dut (
     .clk(clk),
     .resetn(resetn),
+    .i2c_scl_i(1'b1),
+    .i2c_sda_io(i2c_sda),
     .gpio_out(gpio_out),
     .cpu_clk_o(cpu_clk_o),
     .cpu_awake_o(cpu_awake_o)
@@ -36,35 +45,6 @@ module tb_soc;
     repeat (10) @(posedge clk);
     resetn = 1;
   end
-
-  // --------------------------------------------------
-  // Sensor file players
-  // --------------------------------------------------
-
-  logic        accel_valid, accel_ok;
-  logic signed [13:0] ax, ay, az;
-
-  accel_file_player accel_src (
-      .clk(clk),
-      .resetn(resetn),
-      .sample_valid(accel_valid),
-      .sample_ok(accel_ok),
-      .ax(ax),
-      .ay(ay),
-      .az(az)
-  );
-
-  logic        ppg_valid;
-  logic [13:0] ppg_red;
-  logic [13:0] ppg_ir;
-
-  ppg_file_player ppg_src (
-      .clk(clk),
-      .resetn(resetn),
-      .sample_valid(ppg_valid),
-      .red_counts(ppg_red),
-      .ir_counts(ppg_ir)
-  );
 
   // ------------------------------------------------------------
   // TAP internal DUT signals into TB wires (Icarus-safe pattern)

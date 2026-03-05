@@ -9,16 +9,15 @@ module ppg_beat_detect_rr_calc_tb;
   localparam int COEFF_ONE = (1 << COEFF_FRAC);
 
   logic clk = 0;
-  logic rst_n = 0;
+  logic rst_i = 1;
 
   logic [SAMPLE_W-1:0] ppg_sample;
   logic                ppg_valid;
   logic [T_W-1:0]      ppg_sample_time;
-  logic [T_W-1:0]      timebase;
+  logic [T_W-1:0]      sim_time;
 
   logic                cfg_enable;
   logic                cfg_bypass;
-  logic                cfg_time_src;
   logic                cfg_signed;
   logic [COEFF_W-1:0]  cfg_lp_beta;
   logic [COEFF_W-1:0]  cfg_base_alpha;
@@ -36,18 +35,14 @@ module ppg_beat_detect_rr_calc_tb;
   logic [7:0]          cfg_q_min_accept;
 
   wire                 beat_pulse;
-  wire [T_W-1:0]       beat_time;
   wire                 rr_valid;
+  wire                 rr_accepted;
   wire [T_W-1:0]       rr_interval;
-  wire [15:0]          hr_bpm;
+  wire signed [16:0]   delta_hr_bpm;
   wire [7:0]           beat_quality;
   wire                 double_beat;
   wire                 missed_beat;
   wire                 ppg_invalid;
-  wire signed [23:0]   x_filt;
-  wire signed [23:0]   x_hp;
-  wire [23:0]          env;
-  wire [23:0]          thr;
 
   ppg_beat_detect_rr_calc #(
     .SAMPLE_W(SAMPLE_W),
@@ -56,14 +51,12 @@ module ppg_beat_detect_rr_calc_tb;
     .COEFF_FRAC(COEFF_FRAC)
   ) dut (
     .clk_i(clk),
-    .rst_ni(rst_n),
+    .rst_i(rst_i),
     .ppg_sample_i(ppg_sample),
     .ppg_valid_i(ppg_valid),
     .ppg_sample_time_i(ppg_sample_time),
-    .timebase_i(timebase),
     .cfg_enable_i(cfg_enable),
     .cfg_bypass_i(cfg_bypass),
-    .cfg_time_src_i(cfg_time_src),
     .cfg_signed_i(cfg_signed),
     .cfg_lp_beta_i(cfg_lp_beta),
     .cfg_base_alpha_i(cfg_base_alpha),
@@ -80,32 +73,28 @@ module ppg_beat_detect_rr_calc_tb;
     .cfg_q_refrac_penalty_i(cfg_q_refrac_penalty),
     .cfg_q_min_accept_i(cfg_q_min_accept),
     .beat_pulse_o(beat_pulse),
-    .beat_time_o(beat_time),
     .rr_valid_o(rr_valid),
+    .rr_accepted_o(rr_accepted),
     .rr_interval_o(rr_interval),
-    .hr_bpm_o(hr_bpm),
+    .delta_hr_bpm_o(delta_hr_bpm),
     .beat_quality_o(beat_quality),
     .double_beat_o(double_beat),
     .missed_beat_o(missed_beat),
-    .ppg_invalid_o(ppg_invalid),
-    .x_filt_o(x_filt),
-    .x_hp_o(x_hp),
-    .env_o(env),
-    .thr_o(thr)
+    .ppg_invalid_o(ppg_invalid)
   );
 
   always #10 clk = ~clk;
 
   always @(posedge clk) begin
-    if (!rst_n) timebase <= 0;
-    else timebase <= timebase + 1;
+    if (rst_i) sim_time <= 0;
+    else sim_time <= sim_time + 1;
   end
 
   task automatic step_sample(input int s);
     begin
       @(negedge clk);
       ppg_sample <= s[SAMPLE_W-1:0];
-      ppg_sample_time <= timebase;
+      ppg_sample_time <= sim_time;
       ppg_valid <= 1'b1;
       @(posedge clk);
       @(negedge clk);
@@ -133,9 +122,9 @@ module ppg_beat_detect_rr_calc_tb;
 
   task automatic reset_dut();
     begin
-      rst_n <= 1'b0;
+      rst_i <= 1'b1;
       repeat (5) @(posedge clk);
-      rst_n <= 1'b1;
+      rst_i <= 1'b0;
       repeat (2) @(posedge clk);
     end
   endtask
@@ -145,19 +134,22 @@ module ppg_beat_detect_rr_calc_tb;
   int dbl_count;
   int miss_count;
   reg [T_W-1:0] last_rr;
+  reg signed [16:0] last_delta_hr;
 
   always @(posedge clk) begin
-    if (!rst_n) begin
+    if (rst_i) begin
       beat_count <= 0;
       rr_count <= 0;
       dbl_count <= 0;
       miss_count <= 0;
       last_rr <= 0;
+      last_delta_hr <= 0;
     end else begin
       if (beat_pulse) beat_count <= beat_count + 1;
       if (rr_valid) begin
         rr_count <= rr_count + 1;
         last_rr <= rr_interval;
+        last_delta_hr <= delta_hr_bpm;
       end
       if (double_beat) dbl_count <= dbl_count + 1;
       if (missed_beat) miss_count <= miss_count + 1;
@@ -168,7 +160,6 @@ module ppg_beat_detect_rr_calc_tb;
     begin
       cfg_enable            = 1'b1;
       cfg_bypass            = 1'b0;
-      cfg_time_src          = 1'b0;
       cfg_signed            = 1'b0;
       cfg_lp_beta           = COEFF_ONE;
       cfg_base_alpha        = 0;
@@ -191,7 +182,7 @@ module ppg_beat_detect_rr_calc_tb;
     ppg_sample = 0;
     ppg_valid = 0;
     ppg_sample_time = 0;
-    timebase = 0;
+    sim_time = 0;
     apply_default_cfg();
 
     // 1) First beat after reset: beat pulse, no RR.
@@ -275,6 +266,31 @@ module ppg_beat_detect_rr_calc_tb;
     emit_peak(800);
     idle_cycles(20);
     if (beat_count != 0) $fatal(1, "bypass mode still produced beats");
+
+    // 8) Delta HR output: first RR delta=0, then positive and negative deltas.
+    apply_default_cfg();
+    cfg_rr_min_ticks = 32'd150;
+    cfg_rr_max_ticks = 32'd2500;
+    reset_dut();
+    rr_count = 0;
+    emit_peak(700);
+    idle_cycles(900);
+    emit_peak(700); // first RR
+    idle_cycles(20);
+    if (rr_count < 1) $fatal(1, "delta-hr: missing first rr");
+    if (last_delta_hr !== 17'sd0) $fatal(1, "delta-hr: first rr delta must be 0, got %0d", last_delta_hr);
+
+    idle_cycles(450);
+    emit_peak(700); // shorter RR => HR up
+    idle_cycles(20);
+    if (rr_count < 2) $fatal(1, "delta-hr: missing second rr");
+    if (last_delta_hr <= 0) $fatal(1, "delta-hr: expected positive delta, got %0d", last_delta_hr);
+
+    idle_cycles(1300);
+    emit_peak(700); // longer RR => HR down
+    idle_cycles(20);
+    if (rr_count < 3) $fatal(1, "delta-hr: missing third rr");
+    if (last_delta_hr >= 0) $fatal(1, "delta-hr: expected negative delta, got %0d", last_delta_hr);
 
     $display("PASS");
     $finish;

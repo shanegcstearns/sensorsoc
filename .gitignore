@@ -10,7 +10,6 @@ sim/build/
 *.vcd
 *.vvp
 *.elf
-*.bin
 *.hex
 
 sleep_soc/sim_out
