@@ -24,9 +24,12 @@ Our overall simulation design in RTL, with simulation and testbenches in sim/tb.
    * Slave models stream real sensor data from `sim/data/accel_digital.csv` and `sim/data/ppg_digital.csv`
    * PASS criteria: ≥25 accel samples at 25Hz, ≥3 PPG samples, ≥1 motion energy epoch
    * Outputs a waveform at `sim/waves/sensor_pipeline.vcd` (or run directly: `vvp sim/build/tb_se
-* X test - command: ``
-  *
-* X test - command: ``
-  *
-* X test - command: ``
-  * 
+*  IRQ Sleep/Wake test - command: command: make `firmware-main && make sim-irq`
+  *  Runs `sim/tb/tb_irq.sv`, validates wake behavior
+  *  Writes `irq.vcd`
+* Host I2C target & bridge regs test  - command: `make sim-host-i2c-target`
+  * Runs `sim/tb/tb_host_i2c_target.sv` as a unit test for `host_i2c_target.v` and `host_i2c_bridge_regs.v` for i2c transactions/reads and an event pulse for the gpio.
+  * Writes `/tmp/tb_host_i2c_target.vcd`
+* Host I2C to IRQ integration test - command: `make sim-host-i2c-irqc-proxy`
+  *  Runs `rtl/tb_host_i2c_irqc_proxy.sv` and tests the integration of the Host i2c register accesses into the irq wotjpit firmware.
+  *  Writes `/tmp/tb_soc_host_i2c_irq.vcd`
