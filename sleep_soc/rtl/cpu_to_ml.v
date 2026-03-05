@@ -15,7 +15,56 @@ module cpu_to_ml #(
   output wire [31:0] mem_rdata,
 
   // Interrupt from ML block (taketwo)
-  output wire        ml_irq
+  output wire        ml_irq,
+
+
+  // Expose taketwo AXI master ("maxi") to cocotb RAM model
+  // Write address channel
+  output wire [31:0] maxi_awaddr,
+  output wire [7:0]  maxi_awlen,
+  output wire [2:0]  maxi_awsize,
+  output wire [1:0]  maxi_awburst,
+  output wire [0:0]  maxi_awlock,
+  output wire [3:0]  maxi_awcache,
+  output wire [2:0]  maxi_awprot,
+  output wire [3:0]  maxi_awqos,
+  output wire [1:0]  maxi_awuser,
+  output wire        maxi_awvalid,
+  input  wire        maxi_awready,
+
+  // Write data channel
+  output wire [31:0] maxi_wdata,
+  output wire [3:0]  maxi_wstrb,
+  output wire        maxi_wlast,
+  output wire        maxi_wvalid,
+  input  wire        maxi_wready,
+
+  // Write response channel
+  input  wire [0:0]  maxi_bid,
+  input  wire [1:0]  maxi_bresp,
+  input  wire        maxi_bvalid,
+  output wire        maxi_bready,
+
+  // Read address channel
+  output wire [31:0] maxi_araddr,
+  output wire [7:0]  maxi_arlen,
+  output wire [2:0]  maxi_arsize,
+  output wire [1:0]  maxi_arburst,
+  output wire [0:0]  maxi_arlock,
+  output wire [3:0]  maxi_arcache,
+  output wire [2:0]  maxi_arprot,
+  output wire [3:0]  maxi_arqos,
+  output wire [1:0]  maxi_aruser,
+  output wire        maxi_arvalid,
+  input  wire        maxi_arready,
+
+  // Read data channel
+  input  wire [0:0]  maxi_rid,
+  input  wire [31:0] maxi_rdata,
+  input  wire [1:0]  maxi_rresp,
+  input  wire        maxi_rlast,
+  input  wire        maxi_rvalid,
+  output wire        maxi_rready
 );
 
 
@@ -75,66 +124,14 @@ module cpu_to_ml #(
     .saxi_rready (saxi_rready)
   );
 
-  // ------------------------------------------------------------
   // taketwo wrapper (AXI-Lite slave + AXI master for RAM)
-  // For AXI-Lite-only bring-up, we tie off the AXI master response side.
-  // IMPORTANT: do NOT write START if taketwo requires maxi RAM transactions,
-  // or it may hang waiting for responses.
-  // ------------------------------------------------------------
-
-  // Inputs to taketwo's AXI master (RAM) interface: tie off
-  wire        maxi_awready = 1'b0;
-  wire        maxi_wready  = 1'b0;
-  wire [0:0]  maxi_bid     = 1'b0;
-  wire [1:0]  maxi_bresp   = 2'b00;
-  wire        maxi_bvalid  = 1'b0;
-
-  wire        maxi_arready = 1'b0;
-  wire [0:0]  maxi_rid     = 1'b0;
-  wire [31:0] maxi_rdata   = 32'h0;
-  wire [1:0]  maxi_rresp   = 2'b00;
-  wire        maxi_rlast   = 1'b0;
-  wire        maxi_rvalid  = 1'b0;
-
-  // Outputs from taketwo's AXI master interface (unused in this phase)
-  wire [31:0] maxi_awaddr;
-  wire [7:0]  maxi_awlen;
-  wire [2:0]  maxi_awsize;
-  wire [1:0]  maxi_awburst;
-  wire [0:0]  maxi_awlock;
-  wire [3:0]  maxi_awcache;
-  wire [2:0]  maxi_awprot;
-  wire [3:0]  maxi_awqos;
-  wire [1:0]  maxi_awuser;
-  wire        maxi_awvalid;
-
-  wire [31:0] maxi_wdata;
-  wire [3:0]  maxi_wstrb;
-  wire        maxi_wlast;
-  wire        maxi_wvalid;
-
-  wire        maxi_bready;
-
-  wire [31:0] maxi_araddr;
-  wire [7:0]  maxi_arlen;
-  wire [2:0]  maxi_arsize;
-  wire [1:0]  maxi_arburst;
-  wire [0:0]  maxi_arlock;
-  wire [3:0]  maxi_arcache;
-  wire [2:0]  maxi_arprot;
-  wire [3:0]  maxi_arqos;
-  wire [1:0]  maxi_aruser;
-  wire        maxi_arvalid;
-
-  wire        maxi_rready;
-
   taketwo_wrap u_taketwo (
     .CLK   (clk),
     .RESETN(resetn),
     .irq   (ml_irq),
 
-    // AXI master (RAM) - outputs captured, inputs tied off
-    .maxi_awid   (), // wrapped to 0 internally
+    // AXI master (RAM)
+    .maxi_awid   (), // wrapper ties IDs to 0 internally
     .maxi_awaddr (maxi_awaddr),
     .maxi_awlen  (maxi_awlen),
     .maxi_awsize (maxi_awsize),
@@ -158,7 +155,7 @@ module cpu_to_ml #(
     .maxi_bvalid (maxi_bvalid),
     .maxi_bready (maxi_bready),
 
-    .maxi_arid   (), // wrapped to 0 internally
+    .maxi_arid   (), // wrapper ties IDs to 0 internally
     .maxi_araddr (maxi_araddr),
     .maxi_arlen  (maxi_arlen),
     .maxi_arsize (maxi_arsize),
