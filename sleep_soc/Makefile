@@ -26,6 +26,7 @@
 #   # Standalone SV testbench
 #   make sim-reset-ctrl
 #   make sim-globaltimer
+#   make sim-logit-confidence
 #
 #   # Cleanup
 #   make clean
@@ -496,6 +497,24 @@ sim-globaltimer: $(GLOBALTIMER_VVP)
 	@mkdir -p $(WAVE_DIR)
 	@cd $(WAVE_DIR) && $(VVP) $(abspath $(GLOBALTIMER_VVP))
 
+# ============================================================
+# LOGIT TO CONFIDENCE
+# ============================================================
+
+LOGIT_TO_CONF_TOP     := logit_to_confidence_tb
+LOGIT_TO_CONF_VVP     := $(BUILD_DIR)/$(LOGIT_TO_CONF_TOP).vvp
+LOGIT_TO_CONF_SOURCES := sim/tb/logit_to_confidence_tb.sv rtl/logit_to_confidence.sv
+LOGIT_TO_CONF_VCD     := $(WAVE_DIR)/logit_to_confidence_tb.vcd
+
+$(LOGIT_TO_CONF_VVP): $(LOGIT_TO_CONF_SOURCES)
+	$(IVERILOG) -g2012 -s $(LOGIT_TO_CONF_TOP) -o $@ $^
+
+.PHONY: sim-logit-confidence
+sim-logit-confidence: $(LOGIT_TO_CONF_VVP)
+	@echo "== Running $(LOGIT_TO_CONF_TOP) (VCD -> $(LOGIT_TO_CONF_VCD)) =="
+	@mkdir -p $(WAVE_DIR)
+	@cd $(WAVE_DIR) && $(VVP) $(abspath $(LOGIT_TO_CONF_VVP))
+	
 # ============================================================
 # Cleanup
 # ============================================================
