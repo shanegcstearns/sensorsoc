@@ -111,6 +111,7 @@ SOC_RTL_SRCS := \
   $(RTL_DIR)/gpio_mmio.v \
   $(RTL_DIR)/test_mmio.v \
   $(RTL_DIR)/timer_mmio.v \
+  $(RTL_DIR)/ml_stub_mmio.v \
   $(RTL_DIR)/ml_axil_bridge_mmio.v \
   $(RTL_DIR)/irq_ctrl_mmio.v \
   $(RTL_DIR)/taketwo_wrap.v \

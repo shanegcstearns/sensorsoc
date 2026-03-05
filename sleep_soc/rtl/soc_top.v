@@ -12,6 +12,7 @@ module soc_top #(
     parameter PWR_BASE    = 32'h0300_1000,
     parameter TIMER_BASE  = 32'h0300_2000,
     parameter ML_BASE     = 32'h0300_3000,
+    parameter ML_ACCEL_BASE  = 32'h0300_4000,
     parameter IRQC_BASE   = 32'h0300_5000,
     parameter TEST_BASE = 32'h0300_F000
 )(
@@ -156,6 +157,25 @@ module soc_top #(
         .mem_rdata(),
         .event_o  (timer_event),
         .rdata_o  (timer_rdata)
+    );
+
+    // ML stub block
+    wire        ml_ready;
+    wire [31:0] ml_rdata;
+    wire        ml_event;
+    wire [31:0] ml_score;
+
+    ml_stub_mmio #(.BASE_ADDR(ML_BASE)) u_ml (
+        .clk      (clk),
+        .resetn   (resetn),
+        .mem_valid(mmio_sel),
+        .mem_addr (mem_addr),
+        .mem_wdata(mem_wdata),
+        .mem_wstrb(mem_wstrb),
+        .mem_ready(ml_ready),
+        .mem_rdata(ml_rdata),
+        .event_o  (ml_event),
+        .score_o  (ml_score)
     );
 /*
   // ML AXI-Lite bridge
@@ -345,7 +365,7 @@ taketwo_wrap u_taketwo (
     wire        irqc_ready;
     wire [31:0] irqc_rdata;
     wire        irqc_wake_req;
-    wire [31:0] irq_sources = {29'b0, host_i2c_irq_event, /*ml_event,*/ timer_event};
+    wire [31:0] irq_sources = {29'b0, host_i2c_irq_event, ml_event, timer_event};
 
     irq_ctrl_mmio #(.BASE_ADDR(IRQC_BASE)) u_irqc (
         .clk      (clk),
@@ -401,13 +421,13 @@ taketwo_wrap u_taketwo (
     );
 
     // MMIO bus response mux (to PicoRV32)
-    wire mmio_ready = gpio_ready | pwr_ready | timer_ready | /*ml_ready*/ | irqc_ready | test_ready;
+    wire mmio_ready = gpio_ready | pwr_ready | timer_ready | ml_ready | irqc_ready | test_ready;
 
     wire [31:0] mmio_rdata =
         gpio_ready  ? gpio_rdata  :
         pwr_ready   ? pwr_rdata   :
         timer_ready ? timer_rdata :
-       /* ml_ready    ? ml_rdata    :*/
+        ml_ready    ? ml_rdata    :
         irqc_ready  ? irqc_rdata  :
         test_ready  ? test_rdata  :
         32'h0000_0000;

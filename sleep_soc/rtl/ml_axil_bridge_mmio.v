@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 
 module ml_axil_bridge_mmio #(
-    parameter BASE_ADDR = 32'h0300_3000
+    parameter BASE_ADDR = 32'h0300_4000
 )(
     input  wire        clk,
     input  wire        resetn,
