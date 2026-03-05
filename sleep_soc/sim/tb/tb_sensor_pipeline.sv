@@ -123,7 +123,7 @@ module tb_sensor_pipeline;
     // ----------------------------------------------------------------
     i2c_master u_i2c_master (
         .clk                (clk),
-        .resetn             (resetn),
+        .resetn     (resetn),
 
         .accel_cmd_valid_i  (accel_cmd_valid),
         .accel_cmd_ready_o  (accel_cmd_ready),
@@ -198,7 +198,6 @@ module tb_sensor_pipeline;
     // ----------------------------------------------------------------
     wire signed [15:0] ax_o, ay_o, az_o;
     wire               accel_valid_o;
-    wire [31:0]        accel_sample_time;
     wire               accel_init_done;
 
     accel_reader #(
@@ -206,13 +205,13 @@ module tb_sensor_pipeline;
         .RSP_TIMEOUT_TICKS  (10000)
     ) u_accel_reader (
         .clk                    (clk),
-        .resetn                 (resetn),
+        .rst_i                  (~resetn),
         .cfg_enable_i           (1'b1),
         .cfg_init_en_i          (1'b0),   // skip init in sim
-        .cfg_poll_period_ticks_i(32'd200_000),    // faster in sim
+        .cfg_poll_period_ticks_i(32'd200_000),
         .cfg_ctrl1_data_i       (8'h00),
         .cfg_range_data_i       (8'h00),
-        .t_now_i                (t_now),
+        
         .i2c_cmd_valid_o        (accel_cmd_valid),
         .i2c_cmd_ready_i        (accel_cmd_ready),
         .i2c_cmd_addr_o         (accel_cmd_addr),
@@ -228,7 +227,7 @@ module tb_sensor_pipeline;
         .ay_o                   (ay_o),
         .az_o                   (az_o),
         .accel_valid_o          (accel_valid_o),
-        .accel_sample_time_o    (accel_sample_time),
+        
         .init_done_o            (accel_init_done),
         .i2c_error_o            (),
         .timeout_o              (),
@@ -267,13 +266,12 @@ module tb_sensor_pipeline;
 
     motion_preprocess u_motion (
         .clk                   (clk),
-        .resetn                (resetn),
+        .rst_i                 (~resetn),
         .sample_valid_i        (accel_valid_o),
         .sample_ok_i           (1'b1),
         .ax_i                  (ax_o[13:0]),
         .ay_i                  (ay_o[13:0]),
         .az_i                  (az_o[13:0]),
-        .cfg_energy_sq_i       (1'b0),
         .epoch_end_i           (epoch_end),
         .epoch_done_o          (epoch_done),
         .motion_energy_epoch_o (motion_energy_epoch)
@@ -289,8 +287,8 @@ module tb_sensor_pipeline;
     ppg_fifo_reader #(
         .POLL_PERIOD    (50_000)
     ) u_ppg_reader (
-        .clk            (clk),
-        .resetn         (resetn),
+        .clk_i          (clk),
+        .rst_i          (~resetn),
         .t_now          (t_now),
         .i2c_cmd_valid  (ppg_cmd_valid),
         .i2c_cmd_ready  (ppg_cmd_ready),
@@ -328,8 +326,8 @@ module tb_sensor_pipeline;
         forever begin
             @(posedge clk);
             if (accel_valid_o)
-                $display("ACCEL: ax=%0d ay=%0d az=%0d t=%0d @ %0t",
-                         ax_o, ay_o, az_o, accel_sample_time, $time);
+                $display("ACCEL: ax=%0d ay=%0d az=%0d @ %0t",
+                         ax_o, ay_o, az_o, $time);
             if (ppg_sample_valid)
                 $display("PPG:   sample=%0d t=%0d @ %0t",
                          ppg_sample, ppg_sample_time, $time);
@@ -370,3 +368,4 @@ module tb_sensor_pipeline;
     end
 
 endmodule
+
