@@ -17,12 +17,10 @@ module soc_top #(
 )(
     input  wire        clk,        // always-on clock
     input  wire        resetn,     // active-low reset (always-on)
-
-    output wire [7:0]  gpio_out,   // good for LEDs in FPGA later
-
-    // Host I2C target interface
     input  wire        i2c_scl_i,
     inout  wire        i2c_sda_io,
+
+    output wire [7:0]  gpio_out,   // good for LEDs in FPGA later
 
     // optional: expose for waveform/debug
     output wire        cpu_clk_o,
@@ -93,9 +91,6 @@ module soc_top #(
     wire bus_valid = mem_valid && cpu_clk_en_lat;
     wire sram_sel = bus_valid && (mem_addr < 4*MEM_WORDS);
     wire mmio_sel = bus_valid && (mem_addr[31:24] == 8'h03);
-    
-    //wire ml_page  = (mem_addr[31:12] == ML_BASE[31:12]);
-    //wire ml_sel   = bus_valid && ml_page;
 
     // SRAM
     wire        sram_ready;
@@ -157,195 +152,80 @@ module soc_top #(
         .event_o  (timer_event),
         .rdata_o  (timer_rdata)
     );
-/*
-  // ML AXI-Lite bridge
-  wire        ml_ready;
-  wire [31:0] ml_rdata;
-  wire        ml_event;
-  wire [31:0] ml_score;
 
-  // AXI-Lite wires between bridge and taketwo_wrap
-  wire [31:0] ml_saxi_awaddr, ml_saxi_wdata, ml_saxi_araddr;
-  wire [2:0]  ml_saxi_awprot, ml_saxi_arprot;
-  wire        ml_saxi_awvalid, ml_saxi_awready;
-  wire [3:0]  ml_saxi_wstrb;
-  wire        ml_saxi_wvalid, ml_saxi_wready;
-  wire [1:0]  ml_saxi_bresp;
-  wire        ml_saxi_bvalid, ml_saxi_bready;
-  wire [31:0] ml_saxi_rdata;
-  wire [1:0]  ml_saxi_rresp;
-  wire        ml_saxi_rvalid, ml_saxi_rready;
+    // ML stub block
+    wire        ml_ready;
+    wire [31:0] ml_rdata;
+    wire        ml_event;
+    wire [31:0] ml_score;
 
-  ml_axil_bridge_mmio #(.BASE_ADDR(ML_BASE)) u_ml_bridge (
-    .clk(clk),
-    .resetn(resetn),
-
-    .mem_valid(ml_sel),
-    .mem_addr(mem_addr),
-    .mem_wdata(mem_wdata),
-    .mem_wstrb(mem_wstrb),
-
-    .mem_ready(ml_ready),
-    .mem_rdata(ml_rdata),
-
-    .event_o(ml_event),
-    .score_o(ml_score),
-
-    .saxi_awaddr (ml_saxi_awaddr),
-    .saxi_awprot (ml_saxi_awprot),
-    .saxi_awvalid(ml_saxi_awvalid),
-    .saxi_awready(ml_saxi_awready),
-
-    .saxi_wdata  (ml_saxi_wdata),
-    .saxi_wstrb  (ml_saxi_wstrb),
-    .saxi_wvalid (ml_saxi_wvalid),
-    .saxi_wready (ml_saxi_wready),
-
-    .saxi_bresp  (ml_saxi_bresp),
-    .saxi_bvalid (ml_saxi_bvalid),
-    .saxi_bready (ml_saxi_bready),
-
-    .saxi_araddr (ml_saxi_araddr),
-    .saxi_arprot (ml_saxi_arprot),
-    .saxi_arvalid(ml_saxi_arvalid),
-    .saxi_arready(ml_saxi_arready),
-
-    .saxi_rdata  (ml_saxi_rdata),
-    .saxi_rresp  (ml_saxi_rresp),
-    .saxi_rvalid (ml_saxi_rvalid),
-    .saxi_rready (ml_saxi_rready)
-  );
-
-
-// ML wrapper instance (AXI-Lite slave side hooked to bridge)
-wire ml_irq;
-
-// AXI master side of ML (maxi_*).
-// tie-offs to keep sim/build working.
-wire        maxi_awready = 1'b0;
-wire        maxi_wready  = 1'b0;
-wire [0:0]  maxi_bid     = 1'b0;
-wire [1:0]  maxi_bresp   = 2'b00;
-wire        maxi_bvalid  = 1'b0;
-
-wire        maxi_arready = 1'b0;
-wire [0:0]  maxi_rid     = 1'b0;
-wire [31:0] maxi_rdata   = 32'h0;
-wire [1:0]  maxi_rresp   = 2'b00;
-wire        maxi_rlast   = 1'b0;
-wire        maxi_rvalid  = 1'b0;
-
-taketwo_wrap u_taketwo (
-  .CLK   (clk),
-  .RESETN(resetn),
-  .irq   (ml_irq),
-
-  // AXI master (unused for now)
-  .maxi_awid   (),          // wrapper ties IDs internally
-  .maxi_awaddr (),
-  .maxi_awlen  (),
-  .maxi_awsize (),
-  .maxi_awburst(),
-  .maxi_awlock (),
-  .maxi_awcache(),
-  .maxi_awprot (),
-  .maxi_awqos  (),
-  .maxi_awuser (),
-  .maxi_awvalid(),
-  .maxi_awready(maxi_awready),
-
-  .maxi_wdata  (),
-  .maxi_wstrb  (),
-  .maxi_wlast  (),
-  .maxi_wvalid (),
-  .maxi_wready (maxi_wready),
-
-  .maxi_bid    (maxi_bid),
-  .maxi_bresp  (maxi_bresp),
-  .maxi_bvalid (maxi_bvalid),
-  .maxi_bready (),
-
-  .maxi_arid   (),
-  .maxi_araddr (),
-  .maxi_arlen  (),
-  .maxi_arsize (),
-  .maxi_arburst(),
-  .maxi_arlock (),
-  .maxi_arcache(),
-  .maxi_arprot (),
-  .maxi_arqos  (),
-  .maxi_aruser (),
-  .maxi_arvalid(),
-  .maxi_arready(maxi_arready),
-
-  .maxi_rid    (maxi_rid),
-  .maxi_rdata  (maxi_rdata),
-  .maxi_rresp  (maxi_rresp),
-  .maxi_rlast  (maxi_rlast),
-  .maxi_rvalid (maxi_rvalid),
-  .maxi_rready (),
-
-  // AXI-Lite slave (THIS is what the CPU/bridge talks to)
-  .saxi_awaddr (ml_saxi_awaddr),
-  .saxi_awprot (ml_saxi_awprot),
-  .saxi_awvalid(ml_saxi_awvalid),
-  .saxi_awready(ml_saxi_awready),
-
-  .saxi_wdata  (ml_saxi_wdata),
-  .saxi_wstrb  (ml_saxi_wstrb),
-  .saxi_wvalid (ml_saxi_wvalid),
-  .saxi_wready (ml_saxi_wready),
-
-  .saxi_bresp  (ml_saxi_bresp),
-  .saxi_bvalid (ml_saxi_bvalid),
-  .saxi_bready (ml_saxi_bready),
-
-  .saxi_araddr (ml_saxi_araddr),
-  .saxi_arprot (ml_saxi_arprot),
-  .saxi_arvalid(ml_saxi_arvalid),
-  .saxi_arready(ml_saxi_arready),
-
-  .saxi_rdata  (ml_saxi_rdata),
-  .saxi_rresp  (ml_saxi_rresp),
-  .saxi_rvalid (ml_saxi_rvalid),
-  .saxi_rready (ml_saxi_rready)
-);
-*/
-    // Host I2C target + bridge registers
-    wire       i2c_wr_en, i2c_proto_err;
-    wire [7:0] i2c_wr_addr, i2c_wr_data, i2c_rd_addr, i2c_rd_data;
-    wire       host_i2c_irq_event;
-
-    host_i2c_target #(.SLAVE_ADDR(7'h42)) u_i2c_target (
-        .clk        (clk),
-        .resetn     (resetn),
-        .i2c_scl_i  (i2c_scl_i),
-        .i2c_sda_io (i2c_sda_io),
-        .wr_en_o    (i2c_wr_en),
-        .wr_addr_o  (i2c_wr_addr),
-        .wr_data_o  (i2c_wr_data),
-        .rd_addr_o  (i2c_rd_addr),
-        .rd_data_i  (i2c_rd_data),
-        .proto_err_o(i2c_proto_err)
+    ml_stub_mmio #(.BASE_ADDR(ML_BASE)) u_ml (
+        .clk      (clk),
+        .resetn   (resetn),
+        .mem_valid(mmio_sel),
+        .mem_addr (mem_addr),
+        .mem_wdata(mem_wdata),
+        .mem_wstrb(mem_wstrb),
+        .mem_ready(ml_ready),
+        .mem_rdata(ml_rdata),
+        .event_o  (ml_event),
+        .score_o  (ml_score)
     );
 
-    host_i2c_bridge_regs u_i2c_bridge (
-        .clk        (clk),
-        .resetn     (resetn),
-        .wr_en_i    (i2c_wr_en),
-        .wr_addr_i  (i2c_wr_addr),
-        .wr_data_i  (i2c_wr_data),
-        .rd_addr_i  (i2c_rd_addr),
-        .rd_data_o  (i2c_rd_data),
-        .proto_err_i(i2c_proto_err),
-        .event_o    (host_i2c_irq_event)
+    // Off-chip host I2C target bridge (always-on domain)
+    wire        host_i2c_wr_en;
+    wire [7:0]  host_i2c_wr_addr;
+    wire [7:0]  host_i2c_wr_data;
+    wire [7:0]  host_i2c_rd_addr;
+    wire [7:0]  host_i2c_rd_data;
+    wire        host_i2c_proto_err;
+    wire        host_i2c_irq_event;
+    wire        host_i2c_irqc_req;
+    wire        host_i2c_irqc_we;
+    wire [7:0]  host_i2c_irqc_off;
+    wire [31:0] host_i2c_irqc_wdata;
+    wire        host_i2c_irqc_ready;
+    wire [31:0] host_i2c_irqc_rdata;
+
+    host_i2c_target #(
+        .SLAVE_ADDR(7'h42)
+    ) u_host_i2c_target (
+        .clk       (clk),
+        .resetn    (resetn),
+        .i2c_scl_i (i2c_scl_i),
+        .i2c_sda_io(i2c_sda_io),
+        .wr_en_o   (host_i2c_wr_en),
+        .wr_addr_o (host_i2c_wr_addr),
+        .wr_data_o (host_i2c_wr_data),
+        .rd_addr_o (host_i2c_rd_addr),
+        .rd_data_i (host_i2c_rd_data),
+        .proto_err_o(host_i2c_proto_err)
+    );
+
+    host_i2c_bridge_regs u_host_i2c_bridge_regs (
+        .clk       (clk),
+        .resetn    (resetn),
+        .wr_en_i   (host_i2c_wr_en),
+        .wr_addr_i (host_i2c_wr_addr),
+        .wr_data_i (host_i2c_wr_data),
+        .rd_addr_i (host_i2c_rd_addr),
+        .rd_data_o (host_i2c_rd_data),
+        .proto_err_i(host_i2c_proto_err),
+        .ml_score_i(ml_score),
+        .event_o   (host_i2c_irq_event),
+        .irqc_req_o(host_i2c_irqc_req),
+        .irqc_we_o (host_i2c_irqc_we),
+        .irqc_off_o(host_i2c_irqc_off),
+        .irqc_wdata_o(host_i2c_irqc_wdata),
+        .irqc_ready_i(host_i2c_irqc_ready),
+        .irqc_rdata_i(host_i2c_irqc_rdata)
     );
 
     // IRQ controller: pending/mask/wake filtering + MMIO visibility.
     wire        irqc_ready;
     wire [31:0] irqc_rdata;
     wire        irqc_wake_req;
-    wire [31:0] irq_sources = {29'b0, host_i2c_irq_event, /*ml_event,*/ timer_event};
+    wire [31:0] irq_sources = {29'b0, host_i2c_irq_event, ml_event, timer_event};
 
     irq_ctrl_mmio #(.BASE_ADDR(IRQC_BASE)) u_irqc (
         .clk      (clk),
@@ -356,6 +236,12 @@ taketwo_wrap u_taketwo (
         .mem_wstrb(mem_wstrb),
         .mem_ready(irqc_ready),
         .mem_rdata(irqc_rdata),
+        .host_req_i(host_i2c_irqc_req),
+        .host_we_i(host_i2c_irqc_we),
+        .host_off_i(host_i2c_irqc_off),
+        .host_wdata_i(host_i2c_irqc_wdata),
+        .host_ready_o(host_i2c_irqc_ready),
+        .host_rdata_o(host_i2c_irqc_rdata),
         .irq_src_i(irq_sources),
         .irq_o    (irq),
         .wake_req_o(irqc_wake_req)
@@ -400,14 +286,17 @@ taketwo_wrap u_taketwo (
         .code_o(test_code)
     );
 
+
+
+
     // MMIO bus response mux (to PicoRV32)
-    wire mmio_ready = gpio_ready | pwr_ready | timer_ready | /*ml_ready*/ | irqc_ready | test_ready;
+    wire mmio_ready = gpio_ready | pwr_ready | timer_ready | ml_ready | irqc_ready | test_ready;
 
     wire [31:0] mmio_rdata =
         gpio_ready  ? gpio_rdata  :
         pwr_ready   ? pwr_rdata   :
         timer_ready ? timer_rdata :
-       /* ml_ready    ? ml_rdata    :*/
+        ml_ready    ? ml_rdata    :
         irqc_ready  ? irqc_rdata  :
         test_ready  ? test_rdata  :
         32'h0000_0000;

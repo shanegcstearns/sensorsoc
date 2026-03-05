@@ -19,9 +19,10 @@
 #   make sim-soc FW_VARIANT=test_sleepwake_periodic
 #   make sim-soc FW_VARIANT=main
 #
-#   # Unit tests
+#   # Cocotb tests
 #   make test-mmio
 #   make test-timer
+#	make test-cpu-ml
 #
 #   # Standalone SV testbench
 #   make sim-reset-ctrl
@@ -111,13 +112,14 @@ SOC_RTL_SRCS := \
   $(RTL_DIR)/gpio_mmio.v \
   $(RTL_DIR)/test_mmio.v \
   $(RTL_DIR)/timer_mmio.v \
+  $(RTL_DIR)/ml_stub_mmio.v \
   $(RTL_DIR)/ml_axil_bridge_mmio.v \
   $(RTL_DIR)/irq_ctrl_mmio.v \
   $(RTL_DIR)/taketwo_wrap.v \
   $(RTL_DIR)/taketwo.v \
   $(RTL_DIR)/pwrctrl_mmio.v \
-  $(RTL_DIR)/host_i2c_target.sv \
-  $(RTL_DIR)/host_i2c_bridge_regs.sv
+  $(RTL_DIR)/host_i2c_target.v \
+  $(RTL_DIR)/host_i2c_bridge_regs.v
 
 SOC_TB_SRCS  := $(TB_DIR)/tb_soc.sv
 SOC_VVP      := sim_soc.vvp
@@ -168,6 +170,7 @@ FW_OUTDIR := $(FW_DIR)/build/$(FW_VARIANT)
 FW_ELF    := $(FW_OUTDIR)/firmware.elf
 FW_BIN    := $(FW_OUTDIR)/firmware.bin
 FW_HEX    := $(FW_OUTDIR)/firmware.hex
+FW_HEX_MAIN := $(FW_DIR)/build/main/firmware.hex
 
 # Build rule
 $(FW_HEX): $(FW_DIR)/start.S $(FW_DIR)/linker.ld $(FW_SRC) $(BIN2HEX_PY)
@@ -235,7 +238,7 @@ $(IRQ_VVP): $(IRQ_TB_SRCS) $(SOC_RTL_SRCS)
 	  $(IRQ_TB_SRCS) \
 	  $(SOC_RTL_SRCS)
 
-sim-irq: $(IRQ_VVP) $(FW_HEX_MAIN) | $(SIM_BUILD)
+sim-irq: $(IRQ_VVP) firmware-main | $(SIM_BUILD)
 	@echo "[SIM] Running tb_irq (will read $(FW_HEX_MAIN))"
 	$(VVP) $(IRQ_VVP)
 
@@ -286,6 +289,33 @@ test-timer: $(TIMER_VVP)
 	COCOTB_TEST_MODULES=$(TIMER_PYMOD) \
 	$(VVP) -M "$(COCOTB_LIBDIR)" -m libcocotbvpi_icarus $(TIMER_VVP)
 
+# ============================================================
+# Cocotb: cpu_to_ml (AXI-Lite bridge + taketwo_wrap)
+# ============================================================
+
+CPU_ML_TOP    := sim_cpu_to_ml
+CPU_ML_TOP_V  := $(TB_DIR)/sim_cpu_to_ml.v
+CPU_ML_VVP    := sim_cpu_to_ml.vvp
+CPU_ML_PYMOD  := cpu_to_ml_tb
+
+CPU_ML_RTL_SRCS := \
+  $(RTL_DIR)/cpu_to_ml.v \
+  $(RTL_DIR)/ml_axil_bridge_mmio.v \
+  $(RTL_DIR)/taketwo_wrap.v \
+  $(RTL_DIR)/taketwo.v
+
+$(CPU_ML_VVP): $(CPU_ML_TOP_V) $(CPU_ML_RTL_SRCS)
+	@echo "[COCOTB] Building $@"
+	$(IVERILOG) -g2012 -o $@ \
+	  $(CPU_ML_TOP_V) \
+	  $(CPU_ML_RTL_SRCS)
+
+.PHONY: test-cpu-ml
+test-cpu-ml: $(CPU_ML_VVP)
+	@echo "[COCOTB] Running $(CPU_ML_PYMOD) on $(CPU_ML_TOP)"
+	@export COCOTB_TOPLEVEL=$(CPU_ML_TOP); \
+	export COCOTB_TEST_MODULES=$(CPU_ML_PYMOD); \
+	$(call RUN_COCOTB_ICARUS,$(CPU_ML_VVP))
 # ============================================================
 # Cocotb: ML test 
 # ============================================================
@@ -481,8 +511,8 @@ sim-top-pipeline: $(TOP_PIPELINE_VVP)
 HOST_I2C_TARGET_TOP     := tb_host_i2c_target
 HOST_I2C_TARGET_VVP     := $(BUILD_DIR)/$(HOST_I2C_TARGET_TOP).vvp
 HOST_I2C_TARGET_SOURCES := sim/tb/tb_host_i2c_target.sv \
-                           rtl/host_i2c_target.sv \
-                           rtl/host_i2c_bridge_regs.sv
+                           rtl/host_i2c_target.v \
+                           rtl/host_i2c_bridge_regs.v
 
 $(HOST_I2C_TARGET_VVP): $(HOST_I2C_TARGET_SOURCES)
 	$(IVERILOG) -g2012 -s $(HOST_I2C_TARGET_TOP) -o $@ $^
@@ -499,9 +529,7 @@ sim-host-i2c-target: $(HOST_I2C_TARGET_VVP)
 SOC_I2C_IRQ_TOP     := tb_soc_host_i2c_irq
 SOC_I2C_IRQ_VVP     := $(BUILD_DIR)/$(SOC_I2C_IRQ_TOP).vvp
 SOC_I2C_IRQ_SOURCES := sim/tb/tb_soc_host_i2c_irq.sv \
-                       $(SOC_RTL_SRCS) \
-                       rtl/host_i2c_target.sv \
-                       rtl/host_i2c_bridge_regs.sv
+                       $(SOC_RTL_SRCS)
 
 $(SOC_I2C_IRQ_VVP): $(SOC_I2C_IRQ_SOURCES)
 	$(IVERILOG) -g2012 -s $(SOC_I2C_IRQ_TOP) -o $@ $^
@@ -510,6 +538,23 @@ $(SOC_I2C_IRQ_VVP): $(SOC_I2C_IRQ_SOURCES)
 sim-soc-host-i2c-irq: $(SOC_I2C_IRQ_VVP)
 	@echo "== Running $(SOC_I2C_IRQ_TOP) =="
 	$(VVP) $(SOC_I2C_IRQ_VVP)
+
+# ============================================================
+# HOST I2C IRQC PROXY (SOC integration)
+# ============================================================
+
+HOST_I2C_IRQC_PROXY_TOP     := tb_host_i2c_irqc_proxy
+HOST_I2C_IRQC_PROXY_VVP     := $(BUILD_DIR)/$(HOST_I2C_IRQC_PROXY_TOP).vvp
+HOST_I2C_IRQC_PROXY_SOURCES := rtl/tb_host_i2c_irqc_proxy.sv \
+                               $(SOC_RTL_SRCS)
+
+$(HOST_I2C_IRQC_PROXY_VVP): $(HOST_I2C_IRQC_PROXY_SOURCES)
+	$(IVERILOG) -g2012 -s $(HOST_I2C_IRQC_PROXY_TOP) -o $@ $^
+
+.PHONY: sim-host-i2c-irqc-proxy
+sim-host-i2c-irqc-proxy: $(HOST_I2C_IRQC_PROXY_VVP)
+	@echo "== Running $(HOST_I2C_IRQC_PROXY_TOP) =="
+	$(VVP) $(HOST_I2C_IRQC_PROXY_VVP)
 
 # ============================================================
 # GLOBAL TIMER
@@ -546,6 +591,44 @@ sim-logit-confidence: $(LOGIT_TO_CONF_VVP)
 	@echo "== Running $(LOGIT_TO_CONF_TOP) (VCD -> $(LOGIT_TO_CONF_VCD)) =="
 	@mkdir -p $(WAVE_DIR)
 	@cd $(WAVE_DIR) && $(VVP) $(abspath $(LOGIT_TO_CONF_VVP))
+
+# ============================================================
+# ML LOGIT SRAM MMIO (compile/elab check)
+# ============================================================
+
+ML_LOGIT_SRAM_MMIO_TOP     := ml_logit_sram_mmio
+ML_LOGIT_SRAM_MMIO_VVP     := $(BUILD_DIR)/$(ML_LOGIT_SRAM_MMIO_TOP).vvp
+ML_LOGIT_SRAM_MMIO_SOURCES := rtl/ml_logit_sram_mmio.v
+
+$(ML_LOGIT_SRAM_MMIO_VVP): $(ML_LOGIT_SRAM_MMIO_SOURCES) | $(BUILD_DIR)
+	$(IVERILOG) -g2012 -s $(ML_LOGIT_SRAM_MMIO_TOP) -o $@ $^
+
+.PHONY: check-ml-logit-sram-mmio
+check-ml-logit-sram-mmio: $(ML_LOGIT_SRAM_MMIO_VVP)
+	@echo "== Built $(ML_LOGIT_SRAM_MMIO_VVP) =="
+
+# ============================================================
+# SENSOR PIPELINE (i2c_master + slave models + tb_sensor_pipeline)
+# ============================================================
+
+SENSOR_PIPELINE_TOP     := tb_sensor_pipeline
+SENSOR_PIPELINE_VVP     := $(BUILD_DIR)/$(SENSOR_PIPELINE_TOP).vvp
+SENSOR_PIPELINE_SOURCES := sim/tb/tb_sensor_pipeline.sv \
+                           rtl/i2c_master.sv \
+                           rtl/accel_reader.sv \
+                           rtl/ppg_fifo_reader.sv \
+                           rtl/motion_preprocess.sv \
+                           rtl/globaltimer.sv \
+                           sim/sensors/i2c_slave_lis2dw12.sv \
+                           sim/sensors/i2c_slave_adpd144ri.sv
+SENSOR_PIPELINE_VCD     := $(WAVE_DIR)/sensor_pipeline.vcd
+
+$(SENSOR_PIPELINE_VVP): $(SENSOR_PIPELINE_SOURCES) | $(BUILD_DIR)
+	$(IVERILOG) -g2012 -o $@ $^
+
+.PHONY: sim-sensor-pipeline
+sim-sensor-pipeline: $(SENSOR_PIPELINE_VVP)
+	$(VVP) $(SENSOR_PIPELINE_VVP)
 	
 # ============================================================
 # Cleanup

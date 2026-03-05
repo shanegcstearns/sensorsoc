@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 
 module ml_axil_bridge_mmio #(
-    parameter BASE_ADDR = 32'h0300_3000
+    parameter BASE_ADDR = 32'h0300_4000
 )(
     input  wire        clk,
     input  wire        resetn,
@@ -45,18 +45,15 @@ module ml_axil_bridge_mmio #(
     output reg         saxi_rready
 );
 
-    // ------------------------------------------------------------
     // Decode: this block responds to the whole 4KB page of BASE_ADDR
-    // ------------------------------------------------------------
     wire sel = mem_valid && (mem_addr[31:12] == BASE_ADDR[31:12]);
 
     // Most AXI-Lite slave IP expects offsets starting at 0x0.
     // So map CPU addr 0x0300_3000 + off  -> AXI addr = off
     wire [31:0] axil_addr = mem_addr - BASE_ADDR;
 
-    // ------------------------------------------------------------
+
     // Simple 1-request-at-a-time FSM
-    // ------------------------------------------------------------
     localparam ST_IDLE   = 3'd0;
     localparam ST_W_AW_W = 3'd1;
     localparam ST_W_B    = 3'd2;
@@ -84,7 +81,6 @@ module ml_axil_bridge_mmio #(
             score_o <= 32'h0;
         end else begin
             // default: no event
-            // (keep as level if you want; right now it’s a pulse)
             event_o <= 1'b0;
 
             // example: if CPU writes to ML reg 0x10 (START) then pulse event
@@ -96,9 +92,8 @@ module ml_axil_bridge_mmio #(
         end
     end
 
-    // ------------------------------------------------------------
+
     // Main FSM
-    // ------------------------------------------------------------
     always @(posedge clk) begin
         if (!resetn) begin
             state <= ST_IDLE;
@@ -141,9 +136,7 @@ module ml_axil_bridge_mmio #(
             // (deassert in logic below)
 
             case (state)
-                // -------------------------
                 // IDLE: latch CPU request
-                // -------------------------
                 ST_IDLE: begin
                     // clear any leftover AXI signals
                     saxi_awvalid <= 1'b0;
@@ -184,9 +177,7 @@ module ml_axil_bridge_mmio #(
                     end
                 end
 
-                // -------------------------
                 // WRITE: send AW + W
-                // -------------------------
                 ST_W_AW_W: begin
                     // AW handshake
                     if (saxi_awvalid && saxi_awready) begin
@@ -208,9 +199,7 @@ module ml_axil_bridge_mmio #(
                     end
                 end
 
-                // -------------------------
                 // WRITE: wait for B
-                // -------------------------
                 ST_W_B: begin
                     if (saxi_bvalid) begin
                         // could check saxi_bresp here
@@ -226,9 +215,7 @@ module ml_axil_bridge_mmio #(
                     end
                 end
 
-                // -------------------------
                 // READ: send AR
-                // -------------------------
                 ST_R_AR: begin
                     if (saxi_arvalid && saxi_arready) begin
                         saxi_arvalid <= 1'b0;
@@ -237,9 +224,7 @@ module ml_axil_bridge_mmio #(
                     end
                 end
 
-                // -------------------------
                 // READ: wait for R
-                // -------------------------
                 ST_R_R: begin
                     if (saxi_rvalid) begin
                         // could check saxi_rresp here
@@ -254,10 +239,8 @@ module ml_axil_bridge_mmio #(
                     end
                 end
 
-                // -------------------------
                 // RESP: ensure CPU deasserts mem_valid before accepting another
                 // (prevents double-issuing if mem_valid stays high)
-                // -------------------------
                 ST_RESP: begin
                     if (!sel) begin
                         state <= ST_IDLE;
