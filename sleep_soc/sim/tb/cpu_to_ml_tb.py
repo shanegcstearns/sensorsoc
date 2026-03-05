@@ -5,10 +5,8 @@ from cocotb.triggers import RisingEdge, ClockCycles, Timer
 from cocotbext.axi import AxiBus, AxiRam
 
 
-# ----------------------------
-# Helpers
-# ----------------------------
 
+# Helpers
 def u32(x: int) -> int:
     return x & 0xFFFFFFFF
 

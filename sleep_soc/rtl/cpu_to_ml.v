@@ -18,9 +18,8 @@ module cpu_to_ml #(
   output wire        ml_irq
 );
 
-  // ------------------------------------------------------------
+
   // AXI-Lite wires between bridge (master) and taketwo_wrap (slave)
-  // ------------------------------------------------------------
   wire [31:0] saxi_awaddr, saxi_wdata, saxi_araddr;
   wire [2:0]  saxi_awprot, saxi_arprot;
   wire        saxi_awvalid, saxi_awready;
