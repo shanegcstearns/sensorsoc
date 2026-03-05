@@ -43,4 +43,6 @@ This directory contains the main SystemVerilog RTL for `sleep_soc`, including th
   * Likely to synthesize to flip flops, replace with generated SRAM macro soon (SRAM-Forge)
 * soc_top.v
   * Instantiates the PicoRV32, SRAM, all MMIO peripherals, and an always on sleep/wake controller that gates the CPU clock while keeping wake sources on.
+* ml_axil_bridge_mmio.v
+  * MMIO peripheral that lets the PicoRV32 CPU acess an AXI-Lite slave (ML accelerator's (`saxi_*`) interface) using the SoC's ready/valid bus.
 
