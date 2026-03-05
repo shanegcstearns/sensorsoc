@@ -3,14 +3,13 @@
 module accel_reader_tb;
 
   logic clk = 0;
-  logic resetn = 0;
+  logic rst_i = 1;
 
   logic        cfg_enable;
   logic        cfg_init_en;
   logic [31:0] cfg_poll_period_ticks;
   logic [7:0]  cfg_ctrl1_data;
   logic [7:0]  cfg_range_data;
-  logic [31:0] t_now;
 
   logic        i2c_cmd_valid;
   logic        i2c_cmd_ready;
@@ -29,7 +28,6 @@ module accel_reader_tb;
   wire signed [15:0] ay;
   wire signed [15:0] az;
   wire               accel_valid;
-  wire [31:0]        accel_sample_time;
   wire               init_done;
   wire               i2c_error;
   wire               timeout;
@@ -44,13 +42,12 @@ module accel_reader_tb;
     .RSP_TIMEOUT_TICKS(25)
   ) dut (
     .clk(clk),
-    .resetn(resetn),
+    .rst_i(rst_i),
     .cfg_enable_i(cfg_enable),
     .cfg_init_en_i(cfg_init_en),
     .cfg_poll_period_ticks_i(cfg_poll_period_ticks),
     .cfg_ctrl1_data_i(cfg_ctrl1_data),
     .cfg_range_data_i(cfg_range_data),
-    .t_now_i(t_now),
     .i2c_cmd_valid_o(i2c_cmd_valid),
     .i2c_cmd_ready_i(i2c_cmd_ready),
     .i2c_cmd_addr_o(i2c_cmd_addr),
@@ -66,7 +63,6 @@ module accel_reader_tb;
     .ay_o(ay),
     .az_o(az),
     .accel_valid_o(accel_valid),
-    .accel_sample_time_o(accel_sample_time),
     .init_done_o(init_done),
     .i2c_error_o(i2c_error),
     .timeout_o(timeout),
@@ -74,11 +70,6 @@ module accel_reader_tb;
   );
 
   always #10 clk = ~clk;
-
-  always @(posedge clk) begin
-    if (!resetn) t_now <= 32'd0;
-    else t_now <= t_now + 32'd1;
-  end
 
   assign i2c_cmd_ready = 1'b1;
 
@@ -136,20 +127,17 @@ module accel_reader_tb;
 
   int sample_count;
   logic signed [15:0] ax_last, ay_last, az_last;
-  logic [31:0] ts_last;
   always @(posedge clk) begin
-    if (!resetn) begin
+    if (rst_i) begin
       sample_count <= 0;
       ax_last <= '0;
       ay_last <= '0;
       az_last <= '0;
-      ts_last <= '0;
     end else if (accel_valid) begin
       sample_count <= sample_count + 1;
       ax_last <= ax;
       ay_last <= ay;
       az_last <= az;
-      ts_last <= accel_sample_time;
     end
   end
 
@@ -165,9 +153,9 @@ module accel_reader_tb;
     cfg_ctrl1_data = 8'h57;
     cfg_range_data = 8'h10;
 
-    resetn = 1'b0;
+    rst_i = 1'b1;
     repeat (5) @(posedge clk);
-    resetn = 1'b1;
+    rst_i = 1'b0;
 
     // 1) Init sequencing writes ODR/range config.
     wait_cmd_check(8'h20, 8'd1, 1'b1, 8'h57, 80);
@@ -191,7 +179,6 @@ module accel_reader_tb;
     if (ax_last !== -16'sd1000) $fatal(1, "ax mismatch got=%0d exp=-1000", ax_last);
     if (ay_last !== 16'sd291) $fatal(1, "ay mismatch got=%0d exp=291", ay_last);
     if (az_last !== -16'sd2) $fatal(1, "az mismatch got=%0d exp=-2", az_last);
-    if ((ts_last > t_now) || ((t_now - ts_last) > 32'd4)) $fatal(1, "timestamp mismatch got=%0d now=%0d", ts_last, t_now);
 
     // 3) Poll scheduler issues another read after interval.
     wait_cmd_check(8'h28, 8'd6, 1'b0, 8'h00, 120);

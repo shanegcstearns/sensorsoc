@@ -9,62 +9,60 @@ module ppg_beat_detect_rr_calc #(
     parameter integer COEFF_FRAC = 10,
     parameter integer QUALITY_MARGIN_SHIFT = 4
 ) (
-    input  wire                         clk_i,
-    input  wire                         rst_ni,
+    input  logic                         clk_i,
+    input  logic                         rst_i,
 
-    input  wire [SAMPLE_W-1:0]          ppg_sample_i,
-    input  wire                         ppg_valid_i,
-    input  wire [T_W-1:0]               ppg_sample_time_i,
-    input  wire [T_W-1:0]               timebase_i,
+    input  logic [SAMPLE_W-1:0]          ppg_sample_i,
+    input  logic                         ppg_valid_i,
+    input  logic [T_W-1:0]               ppg_sample_time_i,
 
-    input  wire                         cfg_enable_i,
-    input  wire                         cfg_bypass_i,
-    input  wire                         cfg_time_src_i,       // 0: timebase_i, 1: ppg_sample_time_i
-    input  wire                         cfg_signed_i,         // 0: unsigned sample, 1: signed sample
+    input  logic                         cfg_enable_i,
+    input  logic                         cfg_bypass_i,
+    input  logic                         cfg_signed_i,         // 0: unsigned sample, 1: signed sample
 
-    input  wire [COEFF_W-1:0]           cfg_lp_beta_i,
-    input  wire [COEFF_W-1:0]           cfg_base_alpha_i,
-    input  wire [ENV_W-1:0]             cfg_env_decay_i,
-    input  wire                         cfg_abs_en_i,
+    input  logic [COEFF_W-1:0]           cfg_lp_beta_i,
+    input  logic [COEFF_W-1:0]           cfg_base_alpha_i,
+    input  logic [ENV_W-1:0]             cfg_env_decay_i,
+    input  logic                         cfg_abs_en_i,
 
-    input  wire [COEFF_W-1:0]           cfg_thr_k_i,
-    input  wire [ENV_W-1:0]             cfg_thr_min_i,
+    input  logic [COEFF_W-1:0]           cfg_thr_k_i,
+    input  logic [ENV_W-1:0]             cfg_thr_min_i,
 
-    input  wire [T_W-1:0]               cfg_refrac_ticks_i,
-    input  wire [T_W-1:0]               cfg_rr_min_ticks_i,
-    input  wire [T_W-1:0]               cfg_rr_max_ticks_i,
-    input  wire                         cfg_peak_mode_i,      // 0: local-max, 1: rising-edge
+    input  logic [T_W-1:0]               cfg_refrac_ticks_i,
+    input  logic [T_W-1:0]               cfg_rr_min_ticks_i,
+    input  logic [T_W-1:0]               cfg_rr_max_ticks_i,
+    input  logic                         cfg_peak_mode_i,      // 0: local-max, 1: rising-edge
 
-    input  wire [7:0]                   cfg_q_amp_w_i,
-    input  wire [7:0]                   cfg_q_slope_w_i,
-    input  wire [7:0]                   cfg_q_refrac_penalty_i,
-    input  wire [7:0]                   cfg_q_min_accept_i,
+    input  logic [7:0]                   cfg_q_amp_w_i,
+    input  logic [7:0]                   cfg_q_slope_w_i,
+    input  logic [7:0]                   cfg_q_refrac_penalty_i,
+    input  logic [7:0]                   cfg_q_min_accept_i,
 
-    output reg                          beat_pulse_o,
-    output reg                          rr_valid_o,
-    output reg                          rr_accepted_o,
-    output reg  [T_W-1:0]               rr_interval_o,
-    output reg  signed [16:0]           delta_hr_bpm_o,
+    output logic                          beat_pulse_o,
+    output logic                          rr_valid_o,
+    output logic                          rr_accepted_o,
+    output logic  [T_W-1:0]               rr_interval_o,
+    output logic  signed [16:0]           delta_hr_bpm_o,
 
-    output reg  [7:0]                   beat_quality_o,
-    output reg                          double_beat_o,
-    output reg                          missed_beat_o,
-    output reg                          ppg_invalid_o
+    output logic  [7:0]                   beat_quality_o,
+    output logic                          double_beat_o,
+    output logic                          missed_beat_o,
+    output logic                          ppg_invalid_o
 );
 
     localparam [COEFF_W-1:0] COEFF_ONE = ({{(COEFF_W-1){1'b0}}, 1'b1} << COEFF_FRAC);
 
-    reg  signed [X_W-1:0] x_lp_r, x_base_r, x_hp_r;
-    reg  [ENV_W-1:0]      env_r, thr_r;
+    logic  signed [X_W-1:0] x_lp_r, x_base_r, x_hp_r;
+    logic  [ENV_W-1:0]      env_r, thr_r;
 
-    reg  signed [X_W-1:0] xhp_d2_r, xhp_d1_r;
-    reg  [ENV_W-1:0]      thr_d1_r;
-    reg  [T_W-1:0]        t_d1_r;
+    logic  signed [X_W-1:0] xhp_d2_r, xhp_d1_r;
+    logic  [ENV_W-1:0]      thr_d1_r;
+    logic  [T_W-1:0]        t_d1_r;
 
-    reg  [T_W-1:0] last_beat_time_r;
-    reg            have_last_beat_r;
-    reg  [15:0]    prev_hr_bpm_r;
-    reg            have_prev_hr_r;
+    logic  [T_W-1:0] last_beat_time_r;
+    logic            have_last_beat_r;
+    logic  [15:0]    prev_hr_bpm_r;
+    logic            have_prev_hr_r;
 
     function automatic signed [X_W-1:0] sample_to_signed;
         input [SAMPLE_W-1:0] s;
@@ -85,60 +83,63 @@ module ppg_beat_detect_rr_calc #(
         end
     endfunction
 
-    wire [T_W-1:0] t_now_w = cfg_time_src_i ? ppg_sample_time_i : timebase_i;
+    logic [T_W-1:0] t_now_w;
+    logic [T_W-1:0] elapsed_since_last_w;
+    logic in_refrac_w;
 
-    wire [T_W-1:0] elapsed_since_last_w = t_now_w - last_beat_time_r;
-    wire in_refrac_w = have_last_beat_r && (elapsed_since_last_w < cfg_refrac_ticks_i);
+    assign t_now_w = ppg_sample_time_i;
+    assign elapsed_since_last_w = t_now_w - last_beat_time_r;
+    assign in_refrac_w = have_last_beat_r && (elapsed_since_last_w < cfg_refrac_ticks_i);
 
-    always @(posedge clk_i or negedge rst_ni) begin
-        reg signed [X_W-1:0] x_raw_v;
-        reg signed [X_W-1:0] lp_err_v;
-        reg signed [X_W+COEFF_W-1:0] lp_mul_v;
-        reg signed [X_W-1:0] lp_step_v;
-        reg signed [X_W-1:0] x_lp_next_v;
+    always @(posedge clk_i) begin
+        logic signed [X_W-1:0] x_raw_v;
+        logic signed [X_W-1:0] lp_err_v;
+        logic signed [X_W+COEFF_W-1:0] lp_mul_v;
+        logic signed [X_W-1:0] lp_step_v;
+        logic signed [X_W-1:0] x_lp_next_v;
 
-        reg signed [X_W-1:0] base_err_v;
-        reg signed [X_W+COEFF_W-1:0] base_mul_v;
-        reg signed [X_W-1:0] base_step_v;
-        reg signed [X_W-1:0] x_base_next_v;
+        logic signed [X_W-1:0] base_err_v;
+        logic signed [X_W+COEFF_W-1:0] base_mul_v;
+        logic signed [X_W-1:0] base_step_v;
+        logic signed [X_W-1:0] x_base_next_v;
 
-        reg signed [X_W-1:0] x_hp_next_v;
-        reg [X_W-1:0] x_mag_v;
+        logic signed [X_W-1:0] x_hp_next_v;
+        logic [X_W-1:0] x_mag_v;
 
-        reg [ENV_W-1:0] env_decay_v;
-        reg [ENV_W-1:0] env_next_v;
+        logic [ENV_W-1:0] env_decay_v;
+        logic [ENV_W-1:0] env_next_v;
 
-        reg [ENV_W+COEFF_W-1:0] thr_mul_v;
-        reg [ENV_W-1:0] thr_scaled_v;
-        reg [ENV_W-1:0] thr_next_v;
+        logic [ENV_W+COEFF_W-1:0] thr_mul_v;
+        logic [ENV_W-1:0] thr_scaled_v;
+        logic [ENV_W-1:0] thr_next_v;
 
-        reg localmax_candidate_v;
-        reg rise_candidate_v;
-        reg candidate_v;
+        logic localmax_candidate_v;
+        logic rise_candidate_v;
+        logic candidate_v;
 
-        reg [X_W-1:0] peak_abs_v;
-        reg signed [X_W-1:0] slope_signed_v;
-        reg [X_W-1:0] slope_mag_v;
-        reg [X_W-1:0] amp_margin_v;
-        reg [X_W-1:0] slope_margin_v;
-        reg [31:0] amp_term_v;
-        reg [31:0] slope_term_v;
-        reg [31:0] quality_raw_v;
-        reg [31:0] quality_minus_pen_v;
-        reg [7:0]  quality_v;
-        reg [7:0]  penalty_v;
-        reg        quality_ok_v;
+        logic [X_W-1:0] peak_abs_v;
+        logic signed [X_W-1:0] slope_signed_v;
+        logic [X_W-1:0] slope_mag_v;
+        logic [X_W-1:0] amp_margin_v;
+        logic [X_W-1:0] slope_margin_v;
+        logic [31:0] amp_term_v;
+        logic [31:0] slope_term_v;
+        logic [31:0] quality_raw_v;
+        logic [31:0] quality_minus_pen_v;
+        logic [7:0]  quality_v;
+        logic [7:0]  penalty_v;
+        logic        quality_ok_v;
 
-        reg [T_W-1:0] beat_time_v;
-        reg [T_W-1:0] rr_v;
-        reg [15:0]    hr_bpm_new_v;
-        reg signed [16:0] delta_hr_v;
-        reg           accept_v;
-        reg           reject_short_rr_v;
-        reg           flag_missed_v;
-        reg           rr_should_pulse_v;
+        logic [T_W-1:0] beat_time_v;
+        logic [T_W-1:0] rr_v;
+        logic [15:0]    hr_bpm_new_v;
+        logic signed [16:0] delta_hr_v;
+        logic           accept_v;
+        logic           reject_short_rr_v;
+        logic           flag_missed_v;
+        logic           rr_should_pulse_v;
 
-        if (!rst_ni) begin
+        if (rst_i) begin
             beat_pulse_o      <= 1'b0;
             rr_valid_o        <= 1'b0;
             rr_accepted_o     <= 1'b0;
@@ -325,3 +326,5 @@ module ppg_beat_detect_rr_calc #(
     end
 
 endmodule
+
+

@@ -3,7 +3,7 @@
 module cos_lut_timer_tb;
 
   logic clk = 0;
-  logic resetn = 0;
+  logic rst_i = 1;
 
   logic        cfg_enable;
   logic [31:0] seconds_in_night;
@@ -16,7 +16,7 @@ module cos_lut_timer_tb;
 
   cos_lut_timer dut (
     .clk_i(clk),
-    .rst_ni(resetn),
+    .rst_i(rst_i),
     .cfg_enable_i(cfg_enable),
     .seconds_in_night_i(seconds_in_night),
     .seconds_valid_i(seconds_valid),
@@ -47,9 +47,9 @@ module cos_lut_timer_tb;
     cfg_lut_bits = 3'd6;
     cfg_scale_q15 = 16'd32767;
 
-    resetn = 1'b0;
+    rst_i = 1'b1;
     repeat (5) @(posedge clk);
-    resetn = 1'b1;
+    rst_i = 1'b0;
 
     // Cos quarter points
     tick_seconds(32'd0);

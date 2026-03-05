@@ -3,17 +3,17 @@
 module cos_lut_timer #(
     parameter integer LUT_BITS_MAX = 6
 ) (
-    input  wire                   clk_i,
-    input  wire                   rst_ni,
+    input  logic                   clk_i,
+    input  logic                   rst_i,
 
-    input  wire                   cfg_enable_i,
-    input  wire [31:0]            seconds_in_night_i,
-    input  wire                   seconds_valid_i,
-    input  wire [31:0]            cfg_period_seconds_i,
-    input  wire [2:0]             cfg_lut_bits_i,   // 4..6 supported
-    input  wire [15:0]            cfg_scale_q15_i,  // 1.0 -> 32767
+    input  logic                   cfg_enable_i,
+    input  logic [31:0]            seconds_in_night_i,
+    input  logic                   seconds_valid_i,
+    input  logic [31:0]            cfg_period_seconds_i,
+    input  logic [2:0]             cfg_lut_bits_i,   // 4..6 supported
+    input  logic [15:0]            cfg_scale_q15_i,  // 1.0 -> 32767
 
-    output reg  signed [15:0]     cos_time_feat_o
+    output logic  signed [15:0]     cos_time_feat_o
 );
 
     function automatic signed [15:0] cos_lut64;
@@ -40,15 +40,15 @@ module cos_lut_timer #(
         end
     endfunction
 
-    always @(posedge clk_i or negedge rst_ni) begin
-        reg [31:0] period_eff_v;
-        reg [31:0] sec_mod_v;
-        reg [5:0]  idx64_v, idx64_q_v;
-        reg [2:0]  lut_bits_eff_v;
-        reg [2:0]  drop_bits_v;
-        reg signed [15:0] cos_raw_v;
-        reg signed [31:0] cos_scaled_v;
-        if (!rst_ni) begin
+    always @(posedge clk_i) begin
+        logic [31:0] period_eff_v;
+        logic [31:0] sec_mod_v;
+        logic [5:0]  idx64_v, idx64_q_v;
+        logic [2:0]  lut_bits_eff_v;
+        logic [2:0]  drop_bits_v;
+        logic signed [15:0] cos_raw_v;
+        logic signed [31:0] cos_scaled_v;
+        if (rst_i) begin
             cos_time_feat_o <= 16'sd0;
         end else if (seconds_valid_i) begin
             if (!cfg_enable_i) begin
@@ -71,3 +71,5 @@ module cos_lut_timer #(
     end
 
 endmodule
+
+
