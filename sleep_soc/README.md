@@ -1,5 +1,5 @@
 # sensorsoc
-sleep_soc - our main directory including all files needed for an end to end sim
+sleep_soc - our main project directory including all files needed for an end to end sim
   * taketwo.v
      * nngen-generated ML accelerator for predicting sleep transitions
      * features AXI subordinate and manager to manage reads and writes
@@ -26,4 +26,17 @@ sleep_soc - our main directory including all files needed for an end to end sim
      * axi interface to write feature data into ML accelerator
      * inputs: 4 16-bit busses for signed feature values, AXI manager signals
      * outputs: AXI manager signals
- 
+  * globaltimer.sv
+     * global timer derrived from clock frequency
+     * parameters:
+       * clk speed (Hz) default = 10Mhz (for now)
+       * epoch speed (sampling rate) default = 100Hz
+       * epoch count max (given number of samples) default = 1000
+     * inputs:
+       * clk, reset (positive)
+       * enable - enables the timer to start counting in seconds (note that the timer holds this value when it goes low unless it is reset)
+     * outputs:
+       * time in night (seconds) / time since enable goes high 
+       * epoch end (cetrain number of samples have happened)
+       * sampling epoch index     
+
