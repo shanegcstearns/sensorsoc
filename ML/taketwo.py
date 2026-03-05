@@ -119,7 +119,8 @@ features = [
     "movement",    # body movement magnitude from accel
     "cosine",      # cosine of time in seconds over 24 hr period
     "delta_hr",    # change in heartrate from baseline
-    "hr_rmssd"    # hrv
+    "hr_rmssd",    # hrv
+    "label"        # label
     #"hrv_mov"      # hrv and movement
 ]
 
