@@ -155,24 +155,63 @@ module soc_top #(
         .rdata_o  (timer_rdata)
     );
 
-    // ML stub block
-    wire        ml_ready;
-    wire [31:0] ml_rdata;
-    wire        ml_event;
-    wire [31:0] ml_score;
+  // ML AXI-Lite bridge
+  wire        ml_ready;
+  wire [31:0] ml_rdata;
+  wire        ml_event;
+  wire [31:0] ml_score;
 
-    ml_stub_mmio #(.BASE_ADDR(ML_BASE)) u_ml (
-        .clk      (clk),
-        .resetn   (resetn),
-        .mem_valid(mmio_sel),
-        .mem_addr (mem_addr),
-        .mem_wdata(mem_wdata),
-        .mem_wstrb(mem_wstrb),
-        .mem_ready(ml_ready),
-        .mem_rdata(ml_rdata),
-        .event_o  (ml_event),
-        .score_o  (ml_score)
-    );
+  // AXI-Lite wires between bridge and taketwo_wrap
+  wire [31:0] ml_saxi_awaddr, ml_saxi_wdata, ml_saxi_araddr;
+  wire [2:0]  ml_saxi_awprot, ml_saxi_arprot;
+  wire        ml_saxi_awvalid, ml_saxi_awready;
+  wire [3:0]  ml_saxi_wstrb;
+  wire        ml_saxi_wvalid, ml_saxi_wready;
+  wire [1:0]  ml_saxi_bresp;
+  wire        ml_saxi_bvalid, ml_saxi_bready;
+  wire [31:0] ml_saxi_rdata;
+  wire [1:0]  ml_saxi_rresp;
+  wire        ml_saxi_rvalid, ml_saxi_rready;
+
+  ml_axil_bridge_mmio #(.BASE_ADDR(ML_BASE)) u_ml_bridge (
+    .clk(clk),
+    .resetn(resetn),
+
+    .mem_valid(mmio_sel),
+    .mem_addr(mem_addr),
+    .mem_wdata(mem_wdata),
+    .mem_wstrb(mem_wstrb),
+
+    .mem_ready(ml_ready),
+    .mem_rdata(ml_rdata),
+
+    .event_o(ml_event),
+    .score_o(ml_score),
+
+    .saxi_awaddr (ml_saxi_awaddr),
+    .saxi_awprot (ml_saxi_awprot),
+    .saxi_awvalid(ml_saxi_awvalid),
+    .saxi_awready(ml_saxi_awready),
+
+    .saxi_wdata  (ml_saxi_wdata),
+    .saxi_wstrb  (ml_saxi_wstrb),
+    .saxi_wvalid (ml_saxi_wvalid),
+    .saxi_wready (ml_saxi_wready),
+
+    .saxi_bresp  (ml_saxi_bresp),
+    .saxi_bvalid (ml_saxi_bvalid),
+    .saxi_bready (ml_saxi_bready),
+
+    .saxi_araddr (ml_saxi_araddr),
+    .saxi_arprot (ml_saxi_arprot),
+    .saxi_arvalid(ml_saxi_arvalid),
+    .saxi_arready(ml_saxi_arready),
+
+    .saxi_rdata  (ml_saxi_rdata),
+    .saxi_rresp  (ml_saxi_rresp),
+    .saxi_rvalid (ml_saxi_rvalid),
+    .saxi_rready (ml_saxi_rready)
+  );
 
     // Host I2C target + bridge registers
     wire       i2c_wr_en, i2c_proto_err;
