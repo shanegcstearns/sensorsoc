@@ -255,7 +255,7 @@ module tb_host_i2c_irqc_proxy;
         dut.u_host_i2c_bridge_regs.conf_irq_en = 1'b1;
 
         // Below threshold: no IRQ expected.
-        force dut.u_ml.score_o = 32'h0000_1000;
+        force dut.ml_score_hw = 32'h0000_1000;
         repeat (10) @(posedge clk);
 
         // Check derived logits/confidence internally.
@@ -275,7 +275,7 @@ module tb_host_i2c_irqc_proxy;
         // Cross above threshold: should fire exactly one event.
         wake_before = wake_pulse_count;
         irq_before = dut.u_host_i2c_bridge_regs.irq_count;
-        force dut.u_ml.score_o = 32'h0000_4000;
+        force dut.ml_score_hw = 32'h0000_4000;
         repeat (20) @(posedge clk);
 
         if (!dut.u_irqc.pending[2]) begin
@@ -309,11 +309,11 @@ module tb_host_i2c_irqc_proxy;
         repeat (5) @(posedge clk);
 
         // Drop below then rise again: should re-arm and fire second event.
-        force dut.u_ml.score_o = 32'h0000_0100;
+        force dut.ml_score_hw = 32'h0000_0100;
         repeat (10) @(posedge clk);
         wake_before = wake_pulse_count;
         irq_before = dut.u_host_i2c_bridge_regs.irq_count;
-        force dut.u_ml.score_o = 32'h0000_5000;
+        force dut.ml_score_hw = 32'h0000_5000;
         repeat (20) @(posedge clk);
         if (wake_pulse_count <= wake_before) begin
             $display("FAIL: wake did not retrigger after re-arm");
@@ -359,7 +359,7 @@ module tb_host_i2c_irqc_proxy;
         end
         release dut.u_pwr.sleep_req_o;
 
-        release dut.u_ml.score_o;
+        release dut.ml_score_hw;
 
         if (failures == 0) begin
             $display("PASS: tb_host_i2c_irqc_proxy");

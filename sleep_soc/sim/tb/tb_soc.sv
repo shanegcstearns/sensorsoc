@@ -1,7 +1,9 @@
 `timescale 1ns/1ps
 
 module tb_soc #(
-  parameter string FW = "firmware/build/test_sleepwake/firmware.hex"
+  parameter string FW               = "firmware/build/test_sleepwake/firmware.hex",
+  parameter string WEIGHT_INIT_HEX  = "",
+  parameter int    CHECK_SLEEP_WAKE = 1
 );
 
   initial begin
@@ -25,7 +27,8 @@ module tb_soc #(
 
   soc_top #(
     .MEM_WORDS(1024),
-    .FIRMWARE_HEX(FW)
+    .FIRMWARE_HEX(FW),
+    .WEIGHT_INIT_HEX(WEIGHT_INIT_HEX)
   ) dut (
     .clk(clk),
     .resetn(resetn),
@@ -100,13 +103,13 @@ module tb_soc #(
       @(posedge clk);
 
       if (tap_test_status == 32'hCAFE_BABE) begin
-        if (!saw_sleep || !saw_wake) begin
+        if (CHECK_SLEEP_WAKE && (!saw_sleep || !saw_wake)) begin
           $display("FAIL: Firmware reported PASS but did not observe cpu_awake_o 1->0->1");
           $display("  saw_sleep=%0d saw_wake=%0d", saw_sleep, saw_wake);
           $fatal(1, "Sleep/Wake not observed");
         end
 
-        $display("PASS (sleep/wake observed)");
+        $display("PASS%s", CHECK_SLEEP_WAKE ? " (sleep/wake observed)" : "");
         $finish;
       end
 

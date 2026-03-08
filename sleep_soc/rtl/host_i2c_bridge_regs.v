@@ -18,6 +18,13 @@ module host_i2c_bridge_regs (
     input  wire        proto_err_i,
     input  wire [31:0] ml_score_i,
     output reg         event_o,
+    output wire [31:0] cfg_target_wake_sec_o,
+    output wire [31:0] cfg_window_sec_o,
+    output wire [15:0] cfg_step_sec_o,
+    output wire [15:0] cfg_motion_hi_th_o,
+    output wire [7:0]  cfg_motion_hi_count_o,
+    output wire [7:0]  cfg_policy_o,
+    output wire [15:0] cfg_conf_thr_o,
 
     // Proxy command path to irq_ctrl_mmio sideband interface
     output reg         irqc_req_o,
@@ -34,6 +41,18 @@ module host_i2c_bridge_regs (
     localparam [7:0] REG_IRQ_KICK    = 8'h04;
     localparam [7:0] REG_IRQ_COUNT_L = 8'h05;
     localparam [7:0] REG_IRQ_COUNT_H = 8'h06;
+    localparam [7:0] REG_WAKE_TS0    = 8'h10;
+    localparam [7:0] REG_WAKE_TS1    = 8'h11;
+    localparam [7:0] REG_WAKE_TS2    = 8'h12;
+    localparam [7:0] REG_WAKE_TS3    = 8'h13;
+    localparam [7:0] REG_WAKE_WIN_L  = 8'h14;
+    localparam [7:0] REG_WAKE_WIN_H  = 8'h15;
+    localparam [7:0] REG_STEP_SEC_L  = 8'h16;
+    localparam [7:0] REG_STEP_SEC_H  = 8'h17;
+    localparam [7:0] REG_MOTION_TH_L = 8'h18;
+    localparam [7:0] REG_MOTION_TH_H = 8'h19;
+    localparam [7:0] REG_MOTION_CNT  = 8'h1A;
+    localparam [7:0] REG_WAKE_POLICY = 8'h1B; // bit0=deadline_override
 
     localparam [7:0] REG_IRQC_OFF    = 8'h20;
     localparam [7:0] REG_IRQC_W0     = 8'h21;
@@ -82,14 +101,27 @@ module host_i2c_bridge_regs (
     reg        conf_armed;
     reg        conf_cross_seen_sticky;
     reg        conf_thr_irq_fired_sticky;
+    reg [31:0] cfg_target_wake_sec;
+    reg [31:0] cfg_window_sec;
+    reg [15:0] cfg_step_sec;
+    reg [15:0] cfg_motion_hi_th;
+    reg [7:0]  cfg_motion_hi_count;
+    reg [7:0]  cfg_policy;
 
     wire signed [15:0] logit0_s = ml_score_i[15:0];
     wire signed [15:0] logit1_s = -logit0_s;
     wire [15:0] conf_abs = logit0_s[15] ? (~logit0_s + 16'd1) : logit0_s;
     wire        above_thr_live = (conf_abs >= conf_thr);
 
-    wire in_unix_reserved = (wr_addr_i >= 8'h10) && (wr_addr_i <= 8'h17);
+    wire in_cfg_window    = (wr_addr_i >= 8'h10) && (wr_addr_i <= 8'h1B);
     wire in_irqc_window   = (wr_addr_i >= 8'h20) && (wr_addr_i <= 8'h2B);
+    assign cfg_target_wake_sec_o = cfg_target_wake_sec;
+    assign cfg_window_sec_o = cfg_window_sec;
+    assign cfg_step_sec_o = cfg_step_sec;
+    assign cfg_motion_hi_th_o = cfg_motion_hi_th;
+    assign cfg_motion_hi_count_o = cfg_motion_hi_count;
+    assign cfg_policy_o = cfg_policy;
+    assign cfg_conf_thr_o = conf_thr;
 
     always @(posedge clk) begin
         reg manual_kick_pulse;
@@ -114,12 +146,18 @@ module host_i2c_bridge_regs (
             irqc_req_off_pending <= 8'h00;
             irqc_req_wdata_pending <= 32'h0;
 
-            conf_thr <= 16'h4000;
+            conf_thr <= 16'h0400;
             conf_en  <= 1'b0;
             conf_irq_en <= 1'b0;
             conf_armed <= 1'b1;
             conf_cross_seen_sticky <= 1'b0;
             conf_thr_irq_fired_sticky <= 1'b0;
+            cfg_target_wake_sec <= 32'd1800;
+            cfg_window_sec <= 32'd1800;
+            cfg_step_sec <= 16'd300;
+            cfg_motion_hi_th <= 16'd800;
+            cfg_motion_hi_count <= 8'd2;
+            cfg_policy <= 8'h01;
         end else begin
             manual_kick_pulse = 1'b0;
             threshold_pulse   = 1'b0;
@@ -155,6 +193,18 @@ module host_i2c_bridge_regs (
                             status[ST_IRQ_KICK_SEEN] <= 1'b1;
                         end
                     end
+                    REG_WAKE_TS0: cfg_target_wake_sec[7:0] <= wr_data_i;
+                    REG_WAKE_TS1: cfg_target_wake_sec[15:8] <= wr_data_i;
+                    REG_WAKE_TS2: cfg_target_wake_sec[23:16] <= wr_data_i;
+                    REG_WAKE_TS3: cfg_target_wake_sec[31:24] <= wr_data_i;
+                    REG_WAKE_WIN_L: cfg_window_sec[7:0] <= wr_data_i;
+                    REG_WAKE_WIN_H: cfg_window_sec[15:8] <= wr_data_i;
+                    REG_STEP_SEC_L: cfg_step_sec[7:0] <= wr_data_i;
+                    REG_STEP_SEC_H: cfg_step_sec[15:8] <= wr_data_i;
+                    REG_MOTION_TH_L: cfg_motion_hi_th[7:0] <= wr_data_i;
+                    REG_MOTION_TH_H: cfg_motion_hi_th[15:8] <= wr_data_i;
+                    REG_MOTION_CNT: cfg_motion_hi_count <= wr_data_i;
+                    REG_WAKE_POLICY: cfg_policy <= wr_data_i;
 
                     REG_IRQC_OFF: irqc_off <= wr_data_i;
                     REG_IRQC_W0:  irqc_wdata[7:0] <= wr_data_i;
@@ -196,7 +246,7 @@ module host_i2c_bridge_regs (
                     end
 
                     default: begin
-                        if (!in_unix_reserved && !in_irqc_window)
+                        if (!in_cfg_window && !in_irqc_window)
                             status[ST_I2C_RX_ERROR] <= 1'b1;
                     end
                 endcase
@@ -231,6 +281,18 @@ module host_i2c_bridge_regs (
             REG_IRQ_KICK:    rd_data_o = 8'h00;
             REG_IRQ_COUNT_L: rd_data_o = irq_count[7:0];
             REG_IRQ_COUNT_H: rd_data_o = irq_count[15:8];
+            REG_WAKE_TS0:    rd_data_o = cfg_target_wake_sec[7:0];
+            REG_WAKE_TS1:    rd_data_o = cfg_target_wake_sec[15:8];
+            REG_WAKE_TS2:    rd_data_o = cfg_target_wake_sec[23:16];
+            REG_WAKE_TS3:    rd_data_o = cfg_target_wake_sec[31:24];
+            REG_WAKE_WIN_L:  rd_data_o = cfg_window_sec[7:0];
+            REG_WAKE_WIN_H:  rd_data_o = cfg_window_sec[15:8];
+            REG_STEP_SEC_L:  rd_data_o = cfg_step_sec[7:0];
+            REG_STEP_SEC_H:  rd_data_o = cfg_step_sec[15:8];
+            REG_MOTION_TH_L: rd_data_o = cfg_motion_hi_th[7:0];
+            REG_MOTION_TH_H: rd_data_o = cfg_motion_hi_th[15:8];
+            REG_MOTION_CNT:  rd_data_o = cfg_motion_hi_count;
+            REG_WAKE_POLICY: rd_data_o = cfg_policy;
 
             REG_IRQC_OFF:    rd_data_o = irqc_off;
             REG_IRQC_W0:     rd_data_o = irqc_wdata[7:0];
@@ -255,7 +317,6 @@ module host_i2c_bridge_regs (
             REG_CONF_ABS_L:  rd_data_o = conf_abs[7:0];
             REG_CONF_ABS_H:  rd_data_o = conf_abs[15:8];
 
-            8'h10,8'h11,8'h12,8'h13,8'h14,8'h15,8'h16,8'h17: rd_data_o = 8'h00;
             default:         rd_data_o = 8'h00;
         endcase
     end

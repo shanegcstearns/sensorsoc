@@ -7,13 +7,17 @@ module soc_top #(
     // Firmware init file (one 32-bit word per line, hex).
     parameter FIRMWARE_HEX = "",
 
+    // Weight RAM init file (one 32-bit word per line, hex).
+    parameter WEIGHT_INIT_HEX = "",
+
     // Base addresses (MMIO region)
     parameter GPIO_BASE   = 32'h0300_0000,
     parameter PWR_BASE    = 32'h0300_1000,
     parameter TIMER_BASE  = 32'h0300_2000,
     parameter ML_BASE     = 32'h0300_3000,
     parameter IRQC_BASE   = 32'h0300_5000,
-    parameter TEST_BASE = 32'h0300_F000
+    parameter TEST_BASE   = 32'h0300_F000,
+    parameter WEIGHT_BASE = 32'h0300_6000
 )(
     input  wire        clk,        // always-on clock
     input  wire        resetn,     // active-low reset (always-on)
@@ -91,6 +95,7 @@ module soc_top #(
     wire bus_valid = mem_valid && cpu_clk_en_lat;
     wire sram_sel = bus_valid && (mem_addr < 4*MEM_WORDS);
     wire mmio_sel = bus_valid && (mem_addr[31:24] == 8'h03);
+    wire invalid_sel = bus_valid && !sram_sel && !mmio_sel;
 
     // SRAM
     wire        sram_ready;
@@ -153,23 +158,233 @@ module soc_top #(
         .rdata_o  (timer_rdata)
     );
 
-    // ML stub block
+    // ML AXI-Lite bridge + taketwo accelerator + weight RAM
+
+    // AXI-Lite: ml_axil_bridge_mmio (master) → taketwo_wrap (slave)
+    wire [31:0] ml_saxi_awaddr;
+    wire [2:0]  ml_saxi_awprot;
+    wire        ml_saxi_awvalid;
+    wire        ml_saxi_awready;
+    wire [31:0] ml_saxi_wdata;
+    wire [3:0]  ml_saxi_wstrb;
+    wire        ml_saxi_wvalid;
+    wire        ml_saxi_wready;
+    wire [1:0]  ml_saxi_bresp;
+    wire        ml_saxi_bvalid;
+    wire        ml_saxi_bready;
+    wire [31:0] ml_saxi_araddr;
+    wire [2:0]  ml_saxi_arprot;
+    wire        ml_saxi_arvalid;
+    wire        ml_saxi_arready;
+    wire [31:0] ml_saxi_rdata;
+    wire [1:0]  ml_saxi_rresp;
+    wire        ml_saxi_rvalid;
+    wire        ml_saxi_rready;
+
+    // AXI4: taketwo_wrap (master) → weight_ram_axi (slave)
+    wire [0:0]  wram_awid;
+    wire [31:0] wram_awaddr;
+    wire [7:0]  wram_awlen;
+    wire [2:0]  wram_awsize;
+    wire [1:0]  wram_awburst;
+    wire [0:0]  wram_awlock;
+    wire [3:0]  wram_awcache;
+    wire [2:0]  wram_awprot;
+    wire [3:0]  wram_awqos;
+    wire [1:0]  wram_awuser;
+    wire        wram_awvalid;
+    wire        wram_awready;
+    wire [31:0] wram_wdata;
+    wire [3:0]  wram_wstrb;
+    wire        wram_wlast;
+    wire        wram_wvalid;
+    wire        wram_wready;
+    wire [0:0]  wram_bid;
+    wire [1:0]  wram_bresp;
+    wire        wram_bvalid;
+    wire        wram_bready;
+    wire [0:0]  wram_arid;
+    wire [31:0] wram_araddr;
+    wire [7:0]  wram_arlen;
+    wire [2:0]  wram_arsize;
+    wire [1:0]  wram_arburst;
+    wire [0:0]  wram_arlock;
+    wire [3:0]  wram_arcache;
+    wire [2:0]  wram_arprot;
+    wire [3:0]  wram_arqos;
+    wire [1:0]  wram_aruser;
+    wire        wram_arvalid;
+    wire        wram_arready;
+    wire [0:0]  wram_rid;
+    wire [31:0] wram_rdata;
+    wire [1:0]  wram_rresp;
+    wire        wram_rlast;
+    wire        wram_rvalid;
+    wire        wram_rready;
+
+    wire        ml_irq;   // taketwo inference-done interrupt
     wire        ml_ready;
     wire [31:0] ml_rdata;
-    wire        ml_event;
-    wire [31:0] ml_score;
+    wire        test_ready;
+    wire [31:0] test_rdata;
+    wire [31:0] test_status, test_code;
+    wire [31:0] ml_score_hw;  // ML confidence score: test_mmio.score_o → host_i2c_bridge_regs.ml_score_i
 
-    ml_stub_mmio #(.BASE_ADDR(ML_BASE)) u_ml (
-        .clk      (clk),
-        .resetn   (resetn),
-        .mem_valid(mmio_sel),
-        .mem_addr (mem_addr),
-        .mem_wdata(mem_wdata),
-        .mem_wstrb(mem_wstrb),
-        .mem_ready(ml_ready),
-        .mem_rdata(ml_rdata),
-        .event_o  (ml_event),
-        .score_o  (ml_score)
+    ml_axil_bridge_mmio #(.BASE_ADDR(ML_BASE)) u_ml (
+        .clk         (clk),
+        .resetn      (resetn),
+        .mem_valid   (mmio_sel),
+        .mem_addr    (mem_addr),
+        .mem_wdata   (mem_wdata),
+        .mem_wstrb   (mem_wstrb),
+        .mem_ready   (ml_ready),
+        .mem_rdata   (ml_rdata),
+        .event_o     (),
+        .score_o     (),
+        .saxi_awaddr (ml_saxi_awaddr),
+        .saxi_awprot (ml_saxi_awprot),
+        .saxi_awvalid(ml_saxi_awvalid),
+        .saxi_awready(ml_saxi_awready),
+        .saxi_wdata  (ml_saxi_wdata),
+        .saxi_wstrb  (ml_saxi_wstrb),
+        .saxi_wvalid (ml_saxi_wvalid),
+        .saxi_wready (ml_saxi_wready),
+        .saxi_bresp  (ml_saxi_bresp),
+        .saxi_bvalid (ml_saxi_bvalid),
+        .saxi_bready (ml_saxi_bready),
+        .saxi_araddr (ml_saxi_araddr),
+        .saxi_arprot (ml_saxi_arprot),
+        .saxi_arvalid(ml_saxi_arvalid),
+        .saxi_arready(ml_saxi_arready),
+        .saxi_rdata  (ml_saxi_rdata),
+        .saxi_rresp  (ml_saxi_rresp),
+        .saxi_rvalid (ml_saxi_rvalid),
+        .saxi_rready (ml_saxi_rready)
+    );
+
+    taketwo_wrap u_taketwo (
+        .CLK   (clk),
+        .RESETN(resetn),
+        .irq   (ml_irq),
+        // AXI4 master → weight RAM
+        .maxi_awid   (wram_awid),
+        .maxi_awaddr (wram_awaddr),
+        .maxi_awlen  (wram_awlen),
+        .maxi_awsize (wram_awsize),
+        .maxi_awburst(wram_awburst),
+        .maxi_awlock (wram_awlock),
+        .maxi_awcache(wram_awcache),
+        .maxi_awprot (wram_awprot),
+        .maxi_awqos  (wram_awqos),
+        .maxi_awuser (wram_awuser),
+        .maxi_awvalid(wram_awvalid),
+        .maxi_awready(wram_awready),
+        .maxi_wdata  (wram_wdata),
+        .maxi_wstrb  (wram_wstrb),
+        .maxi_wlast  (wram_wlast),
+        .maxi_wvalid (wram_wvalid),
+        .maxi_wready (wram_wready),
+        .maxi_bid    (wram_bid),
+        .maxi_bresp  (wram_bresp),
+        .maxi_bvalid (wram_bvalid),
+        .maxi_bready (wram_bready),
+        .maxi_arid   (wram_arid),
+        .maxi_araddr (wram_araddr),
+        .maxi_arlen  (wram_arlen),
+        .maxi_arsize (wram_arsize),
+        .maxi_arburst(wram_arburst),
+        .maxi_arlock (wram_arlock),
+        .maxi_arcache(wram_arcache),
+        .maxi_arprot (wram_arprot),
+        .maxi_arqos  (wram_arqos),
+        .maxi_aruser (wram_aruser),
+        .maxi_arvalid(wram_arvalid),
+        .maxi_arready(wram_arready),
+        .maxi_rid    (wram_rid),
+        .maxi_rdata  (wram_rdata),
+        .maxi_rresp  (wram_rresp),
+        .maxi_rlast  (wram_rlast),
+        .maxi_rvalid (wram_rvalid),
+        .maxi_rready (wram_rready),
+        // AXI-Lite slave ← bridge
+        .saxi_awaddr (ml_saxi_awaddr),
+        .saxi_awprot (ml_saxi_awprot),
+        .saxi_awvalid(ml_saxi_awvalid),
+        .saxi_awready(ml_saxi_awready),
+        .saxi_wdata  (ml_saxi_wdata),
+        .saxi_wstrb  (ml_saxi_wstrb),
+        .saxi_wvalid (ml_saxi_wvalid),
+        .saxi_wready (ml_saxi_wready),
+        .saxi_bresp  (ml_saxi_bresp),
+        .saxi_bvalid (ml_saxi_bvalid),
+        .saxi_bready (ml_saxi_bready),
+        .saxi_araddr (ml_saxi_araddr),
+        .saxi_arprot (ml_saxi_arprot),
+        .saxi_arvalid(ml_saxi_arvalid),
+        .saxi_arready(ml_saxi_arready),
+        .saxi_rdata  (ml_saxi_rdata),
+        .saxi_rresp  (ml_saxi_rresp),
+        .saxi_rvalid (ml_saxi_rvalid),
+        .saxi_rready (ml_saxi_rready)
+    );
+
+    wire        weight_ready;
+    wire [31:0] weight_rdata;
+
+    weight_ram_axi #(
+        .WORDS          (4096),
+        .BASE_ADDR      (WEIGHT_BASE),
+        .WEIGHT_INIT_HEX(WEIGHT_INIT_HEX)
+    ) u_weight_ram (
+        .clk         (clk),
+        .resetn      (resetn),
+        // CPU MMIO
+        .mem_valid   (mmio_sel),
+        .mem_addr    (mem_addr),
+        .mem_wdata   (mem_wdata),
+        .mem_wstrb   (mem_wstrb),
+        .mem_ready   (weight_ready),
+        .mem_rdata   (weight_rdata),
+        // AXI4 slave ← taketwo maxi_*
+        .saxi_awid   (wram_awid),
+        .saxi_awaddr (wram_awaddr),
+        .saxi_awlen  (wram_awlen),
+        .saxi_awsize (wram_awsize),
+        .saxi_awburst(wram_awburst),
+        .saxi_awlock (wram_awlock),
+        .saxi_awcache(wram_awcache),
+        .saxi_awprot (wram_awprot),
+        .saxi_awqos  (wram_awqos),
+        .saxi_awuser (wram_awuser),
+        .saxi_awvalid(wram_awvalid),
+        .saxi_awready(wram_awready),
+        .saxi_wdata  (wram_wdata),
+        .saxi_wstrb  (wram_wstrb),
+        .saxi_wlast  (wram_wlast),
+        .saxi_wvalid (wram_wvalid),
+        .saxi_wready (wram_wready),
+        .saxi_bid    (wram_bid),
+        .saxi_bresp  (wram_bresp),
+        .saxi_bvalid (wram_bvalid),
+        .saxi_bready (wram_bready),
+        .saxi_arid   (wram_arid),
+        .saxi_araddr (wram_araddr),
+        .saxi_arlen  (wram_arlen),
+        .saxi_arsize (wram_arsize),
+        .saxi_arburst(wram_arburst),
+        .saxi_arlock (wram_arlock),
+        .saxi_arcache(wram_arcache),
+        .saxi_arprot (wram_arprot),
+        .saxi_arqos  (wram_arqos),
+        .saxi_aruser (wram_aruser),
+        .saxi_arvalid(wram_arvalid),
+        .saxi_arready(wram_arready),
+        .saxi_rid    (wram_rid),
+        .saxi_rdata  (wram_rdata),
+        .saxi_rresp  (wram_rresp),
+        .saxi_rlast  (wram_rlast),
+        .saxi_rvalid (wram_rvalid),
+        .saxi_rready (wram_rready)
     );
 
     // Off-chip host I2C target bridge (always-on domain)
@@ -186,6 +401,13 @@ module soc_top #(
     wire [31:0] host_i2c_irqc_wdata;
     wire        host_i2c_irqc_ready;
     wire [31:0] host_i2c_irqc_rdata;
+    wire [31:0] host_cfg_target_wake_sec;
+    wire [31:0] host_cfg_window_sec;
+    wire [15:0] host_cfg_step_sec;
+    wire [15:0] host_cfg_motion_hi_th;
+    wire [7:0]  host_cfg_motion_hi_count;
+    wire [7:0]  host_cfg_policy;
+    wire [15:0] host_cfg_conf_thr;
 
     host_i2c_target #(
         .SLAVE_ADDR(7'h42)
@@ -211,8 +433,15 @@ module soc_top #(
         .rd_addr_i (host_i2c_rd_addr),
         .rd_data_o (host_i2c_rd_data),
         .proto_err_i(host_i2c_proto_err),
-        .ml_score_i(ml_score),
+        .ml_score_i(ml_score_hw),
         .event_o   (host_i2c_irq_event),
+        .cfg_target_wake_sec_o(host_cfg_target_wake_sec),
+        .cfg_window_sec_o(host_cfg_window_sec),
+        .cfg_step_sec_o(host_cfg_step_sec),
+        .cfg_motion_hi_th_o(host_cfg_motion_hi_th),
+        .cfg_motion_hi_count_o(host_cfg_motion_hi_count),
+        .cfg_policy_o(host_cfg_policy),
+        .cfg_conf_thr_o(host_cfg_conf_thr),
         .irqc_req_o(host_i2c_irqc_req),
         .irqc_we_o (host_i2c_irqc_we),
         .irqc_off_o(host_i2c_irqc_off),
@@ -225,7 +454,7 @@ module soc_top #(
     wire        irqc_ready;
     wire [31:0] irqc_rdata;
     wire        irqc_wake_req;
-    wire [31:0] irq_sources = {29'b0, host_i2c_irq_event, ml_event, timer_event};
+    wire [31:0] irq_sources = {29'b0, host_i2c_irq_event, ml_irq, timer_event};
 
     irq_ctrl_mmio #(.BASE_ADDR(IRQC_BASE)) u_irqc (
         .clk      (clk),
@@ -270,40 +499,47 @@ module soc_top #(
         .cpu_awake_i(cpu_clk_en_lat)
     );
 
-    wire        test_ready;
-    wire [31:0] test_rdata;
-    wire [31:0] test_status, test_code;
-
     test_mmio #(.BASE_ADDR(TEST_BASE)) u_test (
         .clk(clk), .resetn(resetn),
         .mem_valid(mmio_sel),
         .mem_addr(mem_addr),
         .mem_wdata(mem_wdata),
         .mem_wstrb(mem_wstrb),
+        .cfg_target_wake_sec_i(host_cfg_target_wake_sec),
+        .cfg_window_sec_i(host_cfg_window_sec),
+        .cfg_step_sec_i(host_cfg_step_sec),
+        .cfg_motion_hi_th_i(host_cfg_motion_hi_th),
+        .cfg_motion_hi_count_i(host_cfg_motion_hi_count),
+        .cfg_policy_i(host_cfg_policy),
+        .cfg_conf_thr_i(host_cfg_conf_thr),
         .mem_ready(test_ready),
         .mem_rdata(test_rdata),
         .status_o(test_status),
-        .code_o(test_code)
+        .code_o(test_code),
+        .score_o(ml_score_hw)
     );
 
 
 
 
     // MMIO bus response mux (to PicoRV32)
-    wire mmio_ready = gpio_ready | pwr_ready | timer_ready | ml_ready | irqc_ready | test_ready;
+    wire mmio_ready = gpio_ready | pwr_ready | timer_ready | ml_ready | weight_ready | irqc_ready | test_ready;
 
     wire [31:0] mmio_rdata =
-        gpio_ready  ? gpio_rdata  :
-        pwr_ready   ? pwr_rdata   :
-        timer_ready ? timer_rdata :
-        ml_ready    ? ml_rdata    :
-        irqc_ready  ? irqc_rdata  :
-        test_ready  ? test_rdata  :
+        gpio_ready   ? gpio_rdata   :
+        pwr_ready    ? pwr_rdata    :
+        timer_ready  ? timer_rdata  :
+        ml_ready     ? ml_rdata     :
+        weight_ready ? weight_rdata :
+        irqc_ready   ? irqc_rdata   :
+        test_ready   ? test_rdata   :
         32'h0000_0000;
 
     // Overall ready/data to CPU
-    assign mem_ready = sram_ready | mmio_ready;
-    assign mem_rdata = sram_ready ? sram_rdata : mmio_rdata;
+    assign mem_ready = sram_ready | mmio_ready | invalid_sel;
+    assign mem_rdata = sram_ready ? sram_rdata :
+                       mmio_ready ? mmio_rdata :
+                       32'h0000_0000;
 
 // --------------------------------------
 // Sleep / wake state machine (always-on)

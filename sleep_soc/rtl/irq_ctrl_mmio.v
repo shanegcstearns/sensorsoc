@@ -79,7 +79,7 @@ module irq_ctrl_mmio #(
             host_rdata_o    <= 32'h0;
             src_d           <= 32'h0;
             pending         <= 32'h0;
-            mask            <= 32'h0000_0007;
+            mask            <= 32'h0000_0000;
             wake_en         <= 32'h0000_0007;
             active          <= 32'h0;
             wake_pending_d  <= 32'h0;

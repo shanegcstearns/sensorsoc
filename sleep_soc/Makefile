@@ -97,9 +97,12 @@ FW_TESTS     := $(FW_DIR)/tests
 TOOLS_DIR    := tools
 
 BIN2HEX_PY   := $(TOOLS_DIR)/bin2hex.py
+HEX2CHDR_PY  := $(TOOLS_DIR)/hex_to_c_header.py
+FW_GEN_DIR   := $(FW_DIR)/build/generated
+FW_ML_W_HDR  := $(FW_GEN_DIR)/ml_weights_full.h
 
 # Ensure output dirs exist
-$(SIM_BUILD) $(FW_BUILD):
+$(SIM_BUILD) $(FW_BUILD) $(FW_GEN_DIR):
 	@mkdir -p $@
 
 # ----------------------------
@@ -114,6 +117,7 @@ SOC_RTL_SRCS := \
   $(RTL_DIR)/timer_mmio.v \
   $(RTL_DIR)/ml_stub_mmio.v \
   $(RTL_DIR)/ml_axil_bridge_mmio.v \
+  $(RTL_DIR)/weight_ram_axi.v \
   $(RTL_DIR)/irq_ctrl_mmio.v \
   $(RTL_DIR)/taketwo_wrap.v \
   $(RTL_DIR)/taketwo.v \
@@ -161,9 +165,23 @@ FW_C_main                  := $(FW_DIR)/main.c
 FW_C_test_sleepwake         := $(FW_TESTS)/test_sleepwake.c
 FW_C_test_gpio              := $(FW_TESTS)/test_gpio.c
 FW_C_test_sleepwake_periodic:= $(FW_TESTS)/test_sleepwake_periodic.c
+FW_C_test_ml_weights        := $(FW_TESTS)/test_ml_weights.c
+FW_C_test_ml_cpu_wake_i2c   := $(FW_TESTS)/test_ml_cpu_wake_i2c.c
 
 # Select the C source based on FW_VARIANT
 FW_SRC = $(FW_C_$(FW_VARIANT))
+FW_LDSCRIPT_DEFAULT := $(FW_DIR)/linker.ld
+FW_LDSCRIPT_test_ml_cpu_wake_i2c := $(FW_DIR)/linker_32k.ld
+FW_LDSCRIPT := $(if $(FW_LDSCRIPT_$(FW_VARIANT)),$(FW_LDSCRIPT_$(FW_VARIANT)),$(FW_LDSCRIPT_DEFAULT))
+FW_EXTRA_DEPS_test_ml_cpu_wake_i2c := $(FW_ML_W_HDR)
+FW_EXTRA_DEPS := $(FW_EXTRA_DEPS_$(FW_VARIANT))
+FW_ARCH_DEFAULT := rv32imc
+FW_ARCH_test_ml_weights := rv32im
+FW_ARCH_test_ml_cpu_wake_i2c := rv32im
+FW_ARCH := $(if $(FW_ARCH_$(FW_VARIANT)),$(FW_ARCH_$(FW_VARIANT)),$(FW_ARCH_DEFAULT))
+FW_OPT_DEFAULT := -O2
+FW_OPT_test_ml_cpu_wake_i2c := -O0
+FW_OPT := $(if $(FW_OPT_$(FW_VARIANT)),$(FW_OPT_$(FW_VARIANT)),$(FW_OPT_DEFAULT))
 
 # Per-variant output paths
 FW_OUTDIR := $(FW_DIR)/build/$(FW_VARIANT)
@@ -172,14 +190,19 @@ FW_BIN    := $(FW_OUTDIR)/firmware.bin
 FW_HEX    := $(FW_OUTDIR)/firmware.hex
 FW_HEX_MAIN := $(FW_DIR)/build/main/firmware.hex
 
+$(FW_ML_W_HDR): $(RTL_DIR)/taketwo_params.hex $(HEX2CHDR_PY) | $(FW_GEN_DIR)
+	@echo "[FW] Generating full-weight header: $@"
+	@$(PYTHON) $(HEX2CHDR_PY) $< $@ ml_weights_full
+
 # Build rule
-$(FW_HEX): $(FW_DIR)/start.S $(FW_DIR)/linker.ld $(FW_SRC) $(BIN2HEX_PY)
+$(FW_HEX): $(FW_DIR)/start.S $(FW_LDSCRIPT) $(FW_SRC) $(BIN2HEX_PY) $(FW_EXTRA_DEPS)
 	@mkdir -p $(FW_OUTDIR)
-	@echo "[FW] Building $(FW_SRC) -> $(FW_HEX)"
+	@echo "[FW] Building $(FW_SRC) -> $(FW_HEX) (LD=$(FW_LDSCRIPT))"
 	$(RISCV_GCC) \
-	  -march=rv32imc -mabi=ilp32 \
-	  -nostdlib -ffreestanding -O2 \
-	  -Wl,-T,$(FW_DIR)/linker.ld \
+	  -march=$(FW_ARCH) -mabi=ilp32 \
+	  -nostdlib -ffreestanding $(FW_OPT) \
+	  -I$(FW_GEN_DIR) \
+	  -Wl,-T,$(FW_LDSCRIPT) \
 	  -o $(FW_ELF) \
 	  $(FW_DIR)/start.S \
 	  $(FW_SRC)
@@ -204,6 +227,12 @@ firmware-gpio:
 firmware-sleepwake-periodic:
 	@$(MAKE) FW_VARIANT=test_sleepwake_periodic firmware
 
+firmware-ml-weights:
+	@$(MAKE) FW_VARIANT=test_ml_weights firmware
+
+firmware-ml-cpu-wake-i2c:
+	@$(MAKE) FW_VARIANT=test_ml_cpu_wake_i2c firmware
+
 
 
 # ----------------------------
@@ -212,10 +241,15 @@ firmware-sleepwake-periodic:
 .PHONY: build-soc sim-soc
 build-soc: $(SOC_VVP)
 
+WEIGHT_INIT_HEX   ?=
+CHECK_SLEEP_WAKE  ?= 1
+
 $(SOC_VVP): $(SOC_TB_SRCS) $(SOC_RTL_SRCS)
 	@echo "[SIM] Building $@ (FW=$(FW_HEX))"
 	$(IVERILOG) -g2012 -s tb_soc -o $@ \
 	  -P tb_soc.FW=\"$(FW_HEX)\" \
+	  $(if $(WEIGHT_INIT_HEX),-P tb_soc.WEIGHT_INIT_HEX=\"$(WEIGHT_INIT_HEX)\") \
+	  -P tb_soc.CHECK_SLEEP_WAKE=$(CHECK_SLEEP_WAKE) \
 	  $(SOC_TB_SRCS) \
 	  $(SOC_RTL_SRCS)
 
@@ -223,9 +257,69 @@ $(SOC_VVP): $(SOC_TB_SRCS) $(SOC_RTL_SRCS)
 # Example:
 #   make sim-soc FW_VARIANT=test_gpio
 #   make sim-soc FW_VARIANT=test_sleepwake_periodic
+#   make sim-soc FW_VARIANT=test_ml_weights WEIGHT_INIT_HEX=rtl/taketwo_params.hex
 sim-soc: $(SOC_VVP) firmware | $(SIM_BUILD)
 	@echo "[SIM] Running tb_soc (FW=$(FW_HEX))"
 	$(VVP) $(SOC_VVP)
+
+# Convenience: build + run ML weights inference test
+.PHONY: sim-ml-weights
+sim-ml-weights:
+	@$(MAKE) FW_VARIANT=test_ml_weights \
+	         WEIGHT_INIT_HEX=rtl/taketwo_params.hex \
+	         CHECK_SLEEP_WAKE=0 \
+	         sim-soc
+
+# End-to-end ML + CPU sleep/wake + host-I2C wake integration
+SOC_ML_CPU_WAKE_I2C_TOP     := tb_soc_ml_cpu_wake_i2c
+SOC_ML_CPU_WAKE_I2C_VVP     := $(BUILD_DIR)/$(SOC_ML_CPU_WAKE_I2C_TOP).vvp
+SOC_ML_CPU_WAKE_I2C_SOURCES := $(TB_DIR)/tb_soc_ml_cpu_wake_i2c.sv \
+                               $(SOC_RTL_SRCS)
+
+$(SOC_ML_CPU_WAKE_I2C_VVP): $(SOC_ML_CPU_WAKE_I2C_SOURCES)
+	$(IVERILOG) -g2012 -s $(SOC_ML_CPU_WAKE_I2C_TOP) -o $@ \
+	  -P $(SOC_ML_CPU_WAKE_I2C_TOP).FW=\"$(FW_DIR)/build/test_ml_cpu_wake_i2c/firmware.hex\" \
+	  $(SOC_ML_CPU_WAKE_I2C_SOURCES)
+
+.PHONY: sim-ml-cpu-wake-i2c
+sim-ml-cpu-wake-i2c: $(SOC_ML_CPU_WAKE_I2C_VVP) | $(SIM_BUILD)
+	@$(MAKE) FW_VARIANT=test_ml_cpu_wake_i2c firmware
+	@echo "== Running $(SOC_ML_CPU_WAKE_I2C_TOP) (FW=$(FW_DIR)/build/test_ml_cpu_wake_i2c/firmware.hex) =="
+	$(VVP) $(SOC_ML_CPU_WAKE_I2C_VVP)
+
+# CPU->weight SRAM load + AXI-Lite control + AXI lifecycle proof
+SOC_ML_WEIGHT_LOAD_TOP     := tb_soc_ml_weight_load
+SOC_ML_WEIGHT_LOAD_VVP     := $(BUILD_DIR)/$(SOC_ML_WEIGHT_LOAD_TOP).vvp
+SOC_ML_WEIGHT_LOAD_SOURCES := $(TB_DIR)/tb_soc_ml_weight_load.sv \
+                              $(SOC_RTL_SRCS)
+
+$(SOC_ML_WEIGHT_LOAD_VVP): $(SOC_ML_WEIGHT_LOAD_SOURCES)
+	$(IVERILOG) -g2012 -s $(SOC_ML_WEIGHT_LOAD_TOP) -o $@ \
+	  -P $(SOC_ML_WEIGHT_LOAD_TOP).FW=\"$(FW_DIR)/build/test_ml_weights/firmware.hex\" \
+	  $(SOC_ML_WEIGHT_LOAD_SOURCES)
+
+.PHONY: sim-ml-weight-load
+sim-ml-weight-load: $(SOC_ML_WEIGHT_LOAD_VVP) | $(SIM_BUILD)
+	@$(MAKE) FW_VARIANT=test_ml_weights firmware
+	@echo "== Running $(SOC_ML_WEIGHT_LOAD_TOP) (FW=$(FW_DIR)/build/test_ml_weights/firmware.hex) =="
+	$(VVP) $(SOC_ML_WEIGHT_LOAD_VVP)
+
+.PHONY: test-cpu-ml-pipeline
+test-cpu-ml-pipeline:
+	@$(MAKE) test-cpu-ml
+	@$(MAKE) sim-ml-weight-load
+
+.PHONY: test-soc-wake-e2e-p0
+test-soc-wake-e2e-p0:
+	@$(MAKE) test-cpu-ml
+	@$(MAKE) sim-ml-weight-load
+	@$(MAKE) sim-ml-cpu-wake-i2c
+	@$(MAKE) test-host-i2c-bridge
+	@$(MAKE) test-irq-ctrl-races
+
+.PHONY: test-functional-matrix
+test-functional-matrix:
+	@bash tools/test_functionality_matrix.sh
 # ----------------------------
 # IRQ testbench (tb_irq)
 # ----------------------------
@@ -312,10 +406,64 @@ $(CPU_ML_VVP): $(CPU_ML_TOP_V) $(CPU_ML_RTL_SRCS)
 
 .PHONY: test-cpu-ml
 test-cpu-ml: $(CPU_ML_VVP)
-	@echo "[COCOTB] Running $(CPU_ML_PYMOD) on $(CPU_ML_TOP)"
+	@echo "[COCOTB] Running strict IRQ contract tests on $(CPU_ML_TOP)"
 	@export COCOTB_TOPLEVEL=$(CPU_ML_TOP); \
 	export COCOTB_TEST_MODULES=$(CPU_ML_PYMOD); \
+	export COCOTB_TEST_FILTER='test_strict_irq_.*'; \
 	$(call RUN_COCOTB_ICARUS,$(CPU_ML_VVP))
+
+.PHONY: test-cpu-ml-strict-irq
+test-cpu-ml-strict-irq: test-cpu-ml
+
+# ============================================================
+# Cocotb: host_i2c_bridge_regs contract
+# ============================================================
+
+HOST_BRIDGE_TOP    := sim_host_i2c_bridge_regs
+HOST_BRIDGE_TOP_V  := $(TB_DIR)/sim_host_i2c_bridge_regs.v
+HOST_BRIDGE_VVP    := sim_host_i2c_bridge_regs.vvp
+HOST_BRIDGE_PYMOD  := test_host_i2c_bridge_regs
+
+HOST_BRIDGE_RTL_SRCS := \
+  $(RTL_DIR)/host_i2c_bridge_regs.v
+
+$(HOST_BRIDGE_VVP): $(HOST_BRIDGE_TOP_V) $(HOST_BRIDGE_RTL_SRCS)
+	@echo "[COCOTB] Building $@"
+	$(IVERILOG) -g2012 -o $@ \
+	  $(HOST_BRIDGE_TOP_V) \
+	  $(HOST_BRIDGE_RTL_SRCS)
+
+.PHONY: test-host-i2c-bridge
+test-host-i2c-bridge: $(HOST_BRIDGE_VVP)
+	@echo "[COCOTB] Running $(HOST_BRIDGE_PYMOD) on $(HOST_BRIDGE_TOP)"
+	@export COCOTB_TOPLEVEL=$(HOST_BRIDGE_TOP); \
+	export COCOTB_TEST_MODULES=$(HOST_BRIDGE_PYMOD); \
+	$(call RUN_COCOTB_ICARUS,$(HOST_BRIDGE_VVP))
+
+# ============================================================
+# Cocotb: irq_ctrl_mmio race and sideband behavior
+# ============================================================
+
+IRQ_CTRL_TOP    := sim_irq_ctrl_mmio
+IRQ_CTRL_TOP_V  := $(TB_DIR)/sim_irq_ctrl_mmio.v
+IRQ_CTRL_VVP    := sim_irq_ctrl_mmio.vvp
+IRQ_CTRL_PYMOD  := test_irq_ctrl_mmio
+
+IRQ_CTRL_RTL_SRCS := \
+  $(RTL_DIR)/irq_ctrl_mmio.v
+
+$(IRQ_CTRL_VVP): $(IRQ_CTRL_TOP_V) $(IRQ_CTRL_RTL_SRCS)
+	@echo "[COCOTB] Building $@"
+	$(IVERILOG) -g2012 -o $@ \
+	  $(IRQ_CTRL_TOP_V) \
+	  $(IRQ_CTRL_RTL_SRCS)
+
+.PHONY: test-irq-ctrl-races
+test-irq-ctrl-races: $(IRQ_CTRL_VVP)
+	@echo "[COCOTB] Running $(IRQ_CTRL_PYMOD) on $(IRQ_CTRL_TOP)"
+	@export COCOTB_TOPLEVEL=$(IRQ_CTRL_TOP); \
+	export COCOTB_TEST_MODULES=$(IRQ_CTRL_PYMOD); \
+	$(call RUN_COCOTB_ICARUS,$(IRQ_CTRL_VVP))
 # ============================================================
 # Cocotb: ML test 
 # ============================================================
@@ -591,6 +739,25 @@ sim-logit-confidence: $(LOGIT_TO_CONF_VVP)
 	@echo "== Running $(LOGIT_TO_CONF_TOP) (VCD -> $(LOGIT_TO_CONF_VCD)) =="
 	@mkdir -p $(WAVE_DIR)
 	@cd $(WAVE_DIR) && $(VVP) $(abspath $(LOGIT_TO_CONF_VVP))
+
+# ============================================================
+# Cocotb: weight_ram_axi placement test
+# ============================================================
+
+WPLACEMENT_TOP_V  := $(TB_DIR)/sim_weight_placement.v
+WPLACEMENT_VVP    := sim_weight_placement.vvp
+WPLACEMENT_PYMOD  := test_weight_placement
+
+$(WPLACEMENT_VVP): $(WPLACEMENT_TOP_V) $(RTL_DIR)/weight_ram_axi.v
+	@echo "[COCOTB] Building $@"
+	$(IVERILOG) -g2012 -o $@ $(WPLACEMENT_TOP_V) $(RTL_DIR)/weight_ram_axi.v
+
+.PHONY: test-weight-placement
+test-weight-placement: $(WPLACEMENT_VVP)
+	@echo "[COCOTB] Running $(WPLACEMENT_PYMOD) on sim_weight_placement"
+	@export COCOTB_TOPLEVEL=sim_weight_placement; \
+	export COCOTB_TEST_MODULES=$(WPLACEMENT_PYMOD); \
+	$(call RUN_COCOTB_ICARUS,$(WPLACEMENT_VVP))
 
 # ============================================================
 # ML LOGIT SRAM MMIO (compile/elab check)

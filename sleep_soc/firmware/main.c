@@ -1,79 +1,108 @@
 #include <stdint.h>
 
 // TEST MMIO
-#define TEST_STATUS  (*(volatile uint32_t*)0x0300F000u)
-#define TEST_CODE    (*(volatile uint32_t*)0x0300F004u)
+#define TEST_STATUS      (*(volatile uint32_t*)0x0300F000u)
+#define TEST_CODE        (*(volatile uint32_t*)0x0300F004u)
+#define TEST_PASS        0xCAFEBABEu
+#define TEST_FAIL        0xDEADBEEFu
 
 // TIMER MMIO (base 0x03002000)
-#define TIMER_CTRL    (*(volatile uint32_t*)0x03002000u)  // bit0=enable, bit1=periodic
-#define TIMER_RELOAD  (*(volatile uint32_t*)0x03002004u)
-#define TIMER_COUNT   (*(volatile uint32_t*)0x03002008u)
-#define TIMER_EVENT   (*(volatile uint32_t*)0x0300200Cu)  // W1C bit0
+#define TIMER_CTRL       (*(volatile uint32_t*)0x03002000u)  // bit0=enable, bit1=periodic
+#define TIMER_RELOAD     (*(volatile uint32_t*)0x03002004u)
+#define TIMER_COUNT      (*(volatile uint32_t*)0x03002008u)
+#define TIMER_EVENT      (*(volatile uint32_t*)0x0300200Cu)  // W1C bit0
 
-// ML MMIO (base 0x03003000)
-#define ML_CTRL       (*(volatile uint32_t*)0x03003000u)  // bit0=trigger
-#define ML_SCORE      (*(volatile uint32_t*)0x03003004u)  // RO
-#define ML_EVENT      (*(volatile uint32_t*)0x03003008u)  // W1C bit0
+// ML AXI-Lite MMIO (base 0x03003000 in soc_top)
+#define ML_BASE          0x03003000u
+#define ML_REG(off)      (*(volatile uint32_t*)(ML_BASE + (off)))
+#define ML_START         ML_REG(0x10u)  // taketwo reg4
+#define ML_BUSY          ML_REG(0x14u)  // taketwo reg5
+#define ML_IRQ_STAT      ML_REG(0x24u)  // taketwo reg9
+#define ML_IRQ_EN        ML_REG(0x28u)  // taketwo reg10
+#define ML_IRQ_CLR       ML_REG(0x2Cu)  // taketwo reg11 (W1C)
 
 // GPIO MMIO (base 0x03000000)
-#define GPIO_OUT      (*(volatile uint32_t*)0x03000000u)
-#define GPIO_TRIG     (1u << 0)
+#define GPIO_OUT         (*(volatile uint32_t*)0x03000000u)
+#define GPIO_TRIG        (1u << 0)
 
 // POWER MMIO (base 0x03001000)
-#define PWR_CTRL      (*(volatile uint32_t*)0x03001000u)  // bit0=sleep_req
-#define PWR_WAKE_STATUS (*(volatile uint32_t*)0x03001004u)
-#define PWR_WAKE_REASON (*(volatile uint32_t*)0x03001008u)
+#define PWR_CTRL         (*(volatile uint32_t*)0x03001000u)  // bit0=sleep_req
+#define PWR_WAKE_STATUS  (*(volatile uint32_t*)0x03001004u)
+#define PWR_WAKE_REASON  (*(volatile uint32_t*)0x03001008u)
 
 // IRQ controller MMIO (base 0x03005000)
-#define IRQC_PENDING  (*(volatile uint32_t*)0x03005000u)  // W1C pending bits
-#define IRQC_MASK     (*(volatile uint32_t*)0x03005004u)  // source enable bits
-#define IRQC_WAKE_EN  (*(volatile uint32_t*)0x03005008u)  // wake enable bits
+#define IRQC_PENDING     (*(volatile uint32_t*)0x03005000u)  // W1C pending bits
+#define IRQC_MASK        (*(volatile uint32_t*)0x03005004u)  // source enable bits
+#define IRQC_WAKE_EN     (*(volatile uint32_t*)0x03005008u)  // wake enable bits
 
-int main(void)
-{
-    // Known reset state
-    TIMER_EVENT = 0x1;
-    ML_EVENT    = 0x1;
-    PWR_WAKE_STATUS = 0xFFFFFFFF;
-    IRQC_PENDING = 0xFFFFFFFF;
+#define IRQ_TIMER_BIT    (1u << 0)
+#define IRQ_ML_BIT       (1u << 1)
 
-    // Enable timer (bit0) + ml (bit1) in IRQ routing and wake policy.
-    IRQC_MASK    = 0x3;
-    IRQC_WAKE_EN = 0x3;
+static void fail(uint32_t code) {
+    TEST_CODE = code;
+    TEST_STATUS = TEST_FAIL;
+    for (;;) {}
+}
 
-    // Set timer reload to 10000 cycles (short for simulation)
-    TIMER_RELOAD = 10000;
-    TIMER_COUNT  = 10000;
+int main(void) {
+    uint32_t timeout;
 
-    // Enable timer periodic (bit0=enable, bit1=periodic)
-    TIMER_CTRL = 0x3;
+    // Known reset state.
+    TEST_STATUS = 0u;
+    TEST_CODE = 0u;
+    GPIO_OUT = 0u;
+    TIMER_CTRL = 0u;
+    TIMER_EVENT = 1u;
+    PWR_WAKE_STATUS = 0xFFFFFFFFu;
+    IRQC_PENDING = 0xFFFFFFFFu;
 
-    // Sleep until timer event.
-    PWR_CTRL = 0x1;
-    while ((TIMER_EVENT & 0x1u) == 0u) { }
+    // Enable timer (bit0) and ML (bit1) in IRQ routing + wake policy.
+    IRQC_MASK = IRQ_TIMER_BIT | IRQ_ML_BIT;
+    IRQC_WAKE_EN = IRQ_TIMER_BIT | IRQ_ML_BIT;
 
-    // After wake: clear the timer event
-    TIMER_EVENT = 0x1;
-    IRQC_PENDING = 0x1;
+    // Short timer period for simulation.
+    TIMER_RELOAD = 10000u;
+    TIMER_COUNT = 10000u;
+    TIMER_CTRL = 0x3u;  // enable + periodic
 
-    // Trigger ML work while awake.
+    // Sleep until timer IRQ is observed.
+    PWR_CTRL = 1u;
+    timeout = 1000000u;
+    while (((IRQC_PENDING & IRQ_TIMER_BIT) == 0u) && timeout--) {}
+    PWR_CTRL = 0u;
+    if ((IRQC_PENDING & IRQ_TIMER_BIT) == 0u) fail(0xE201u);
+    if ((PWR_WAKE_REASON & IRQ_TIMER_BIT) == 0u) fail(0xE202u);
+    TIMER_EVENT = 1u;
+    IRQC_PENDING = IRQ_TIMER_BIT;
+
+    // Prepare ML completion IRQ generation in taketwo.
+    ML_IRQ_EN = 1u;
+    ML_IRQ_CLR = 1u;
+    if ((ML_IRQ_EN & 1u) == 0u) fail(0xE203u);
+
+    // Trigger ML inference and sleep until ML IRQ pending.
     GPIO_OUT = GPIO_TRIG;
-    ML_CTRL  = 0x1;
-    GPIO_OUT = 0;
+    ML_START = 1u;
+    GPIO_OUT = 0u;
 
-    // Sleep until ML event.
-    PWR_CTRL = 0x1;
-    while ((ML_EVENT & 0x1u) == 0u) { }
+    PWR_CTRL = 1u;
+    timeout = 5000000u;
+    while (((IRQC_PENDING & IRQ_ML_BIT) == 0u) && timeout--) {}
+    PWR_CTRL = 0u;
+    if ((IRQC_PENDING & IRQ_ML_BIT) == 0u) fail(0xE204u);
+    if ((PWR_WAKE_REASON & IRQ_ML_BIT) == 0u) fail(0xE205u);
 
-    TEST_CODE = ML_SCORE;
-    ML_EVENT = 0x1;
-    IRQC_PENDING = 0x2;
+    // Completion coherence: busy must clear and irq status must have asserted.
+    timeout = 500000u;
+    while ((ML_BUSY != 0u) && timeout--) {}
+    if (ML_BUSY != 0u) fail(0xE206u);
+    if ((ML_IRQ_STAT & 1u) == 0u) fail(0xE207u);
 
-    // Clear wake status.
-    PWR_WAKE_STATUS = 0xFFFFFFFF;
+    ML_IRQ_CLR = 1u;
+    IRQC_PENDING = IRQ_ML_BIT;
+    PWR_WAKE_STATUS = 0xFFFFFFFFu;
+    TEST_CODE = 0x1BADB002u;
+    TEST_STATUS = TEST_PASS;
 
-    // Signal PASS.
-    TEST_STATUS = 0xCAFEBABE;
-
-    while (1);
+    for (;;) {}
 }
